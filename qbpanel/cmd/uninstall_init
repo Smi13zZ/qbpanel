@@ -1,0 +1,13 @@
+#!/bin/bash
+
+### Called before uninstalling: stop the service so no orphan process remains.
+
+set -u
+
+MAIN_SCRIPT="$(dirname "$0")/main"
+
+if [ -x "${MAIN_SCRIPT}" ]; then
+    "${MAIN_SCRIPT}" stop >/dev/null 2>&1 || true
+fi
+
+exit 0

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+### Called after an upgrade: bring the service back up.
+
+set -u
+
+MAIN_SCRIPT="$(dirname "$0")/main"
+
+if [ ! -x "${MAIN_SCRIPT}" ]; then
+    chmod +x "${MAIN_SCRIPT}" 2>/dev/null || true
+fi
+
+if [ -x "${MAIN_SCRIPT}" ]; then
+    "${MAIN_SCRIPT}" start >/dev/null 2>&1 || true
+fi
+
+exit 0

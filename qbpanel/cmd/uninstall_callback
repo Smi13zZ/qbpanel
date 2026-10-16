@@ -1,0 +1,18 @@
+#!/bin/bash
+
+### Called after uninstall. Configuration under TRIM_PKGVAR is intentionally
+### kept so a reinstall can pick up the same server list.
+
+set -u
+
+MAIN_SCRIPT="$(dirname "$0")/main"
+if [ -x "${MAIN_SCRIPT}" ]; then
+    "${MAIN_SCRIPT}" stop >/dev/null 2>&1 || true
+fi
+
+if [ -n "${TRIM_PKGVAR:-}" ]; then
+    rm -f "${TRIM_PKGVAR}/qbpanel.pid" \
+          "${TRIM_PKGVAR}/runtime-ports.env" 2>/dev/null || true
+fi
+
+exit 0

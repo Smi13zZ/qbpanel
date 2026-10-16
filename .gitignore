@@ -1,0 +1,31 @@
+# ---- local runtime / development data (never publish) ----
+_local/
+_gh/
+_ref/
+_shots/
+qb-test/
+
+# the built packages are distributed through GitHub Releases
+*.fpk
+
+# maintainer's internal handoff notes (describe a private LAN layout)
+HANDOFF.md
+
+# windows copy of the packing tool - grab it from the fnOS SDK instead
+tools/fnpack.exe
+
+# panel runtime state may hold downloader credentials
+qbpanel/app/var/
+qbpanel/app/server/var/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# editors / os
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

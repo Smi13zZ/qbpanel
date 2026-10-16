@@ -1,0 +1,28 @@
+{
+    "data-share":
+    {
+        "shares":
+        [
+            {
+                "name": "fn-qbpanel",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "fn-qbpanel"
+                    ]
+                }
+            },
+            {
+                "name": "fn-qbpanel/backups",
+                "permission":
+                {
+                    "rw":
+                    [
+                        "fn-qbpanel"
+                    ]
+                }
+            }
+        ]
+    }
+}

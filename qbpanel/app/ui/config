@@ -1,0 +1,17 @@
+{
+  ".url": {
+    "fn-qbpanel.Application": {
+      "noDisplay": false,
+      "allUsers": false,
+      "fileTypes": [],
+      "control": {
+        "accessPerm": "readonly"
+      },
+      "protocol": "http",
+      "title": "qBpanel",
+      "icon": "images/ICON_256.PNG",
+      "type": "iframe",
+      "url": "/cgi/ThirdParty/fn-qbpanel/index.cgi/"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "stepTitle": "服务端口",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "qbpanel 面板自身的访问端口，需为 1-65535 之间的数字。安装完成后可从飞牛桌面图标直接打开，也可以用 http://设备IP:端口 访问。下载器的地址与账号请在安装后进入面板的「服务器」页面填写。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_backend_port",
+        "label": "面板端口 (BACKEND_PORT)",
+        "initValue": "8898",
+        "rules": [
+          {
+            "required": true,
+            "message": "请输入面板端口"
+          },
+          {
+            "pattern": "^[0-9]+$",
+            "message": "端口必须是数字"
+          }
+        ]
+      }
+    ]
+  }
+]

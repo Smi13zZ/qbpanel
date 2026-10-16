@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>qBpanel</title>
+<link rel="icon" href="./images/icon.svg">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+<h2 class="sr-only">qBpanel BitTorrent control panel</h2>
+
+<div class="shell" :class="{ collapsed: collapsed }">
+
+  <!-- ============ sidebar (no brand, footer buttons follow knock) ============ -->
+  <aside class="side" :class="{ open: navOpen }">
+    <nav class="nav">
+      <button v-for="n in navItems" :key="n.id" class="nav-item"
+              :class="{ on: view === n.id }" :title="collapsed ? t(n.key) : n.label"
+              @click="go(n.id)">
+        <span class="ic" v-html="ic(n.icon)"></span>
+        <span class="label">{{ t(n.key) }}</span>
+        <span class="badge" v-if="n.id === 'torrents' && torrentCount">{{ torrentCount }}</span>
+      </button>
+    </nav>
+
+    <div class="side-foot">
+      <div class="foot-row">
+        <button class="icon-btn" @click="cycleTheme" :title="themeTooltip" :aria-label="themeTooltip">
+          <span v-html="ic(themeIcon)"></span>
+        </button>
+        <button class="icon-btn" @click="toggleLang" :title="t('side.lang')" :aria-label="t('side.lang')">
+          <span v-html="ic('lang')"></span>
+        </button>
+      </div>
+      <div class="ver-line" :title="'qBpanel v' + appVersion">
+        <span class="ic" style="width:14px;height:14px;display:flex;align-items:center;justify-content:center" v-html="ic('globe')"></span>
+        <span class="mono">v{{ appVersion }}<template v-if="qbVersion"> · qB {{ qbVersion }}</template></span>
+      </div>
+      <button class="icon-btn wide ghost collapse-btn" @click="toggleCollapse"
+              :title="collapsed ? t('side.expand') : t('side.collapse')"
+              :aria-label="collapsed ? t('side.expand') : t('side.collapse')">
+        <span v-html="ic(collapsed ? 'expand' : 'collapse')"></span>
+      </button>
+    </div>
+  </aside>
+  <div class="mask" v-if="navOpen" @click="navOpen = false"
+       style="justify-content:flex-start;background:rgba(0,0,0,.4)"></div>
+
+  <!-- ============ main ============ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn ghost mobile-only" @click="navOpen = !navOpen" :title="t('side.menu')">
+        <span v-html="ic('menu')"></span>
+      </button>
+      <div class="page-title">{{ pageTitle }}</div>
+      <div class="spacer"></div>
+
+      <!-- :value + @change instead of v-model: v-model would update currentId
+           before the handler runs, making the "already current" guard swallow
+           every switch so the torrent list never reloaded. -->
+      <select v-if="!isMobile && servers.length > 1" class="select topbar-server"
+              :value="currentId"
+              @change="switchServer($event.target.value)" style="width:auto;max-width:210px">
+        <option v-for="s in servers" :key="s.id" :value="s.id">{{ s.name }}</option>
+      </select>
+      <button v-else-if="isMobile && servers.length > 1" type="button" class="select picker-trigger topbar-server"
+              @click="openPicker({
+                title: t('top.switchServer'),
+                value: currentId,
+                options: servers.map(function (s) { return { value: s.id, label: s.name }; }),
+                onPick: (id) => switchServer(id)
+              })"><span class="v">{{ serverName() }}</span></button>
+
+      <span class="chip" :title="connError || t('top.connected')">
+        <i class="dot" :class="connected ? 'on' : 'err'"></i>
+        <span class="hide-sm">{{ connected ? t('top.connected') : t('top.disconnected') }}</span>
+      </span>
+
+      <button class="icon-btn" @click="refresh(true)" :disabled="busy" :title="t('top.refresh')">
+        <span v-html="ic('refresh')"></span>
+      </button>
+    </header>
+
+    <div class="content">
+
+      <!-- ---------- no server ---------- -->
+      <div class="card" v-if="!servers.length && loaded">
+        <h3>{{ t('server.empty') }}</h3>
+        <p class="dim" style="margin:0 0 14px">{{ t('server.emptyHint') }}</p>
+        <button class="btn primary" @click="openServerForm(null)">{{ t('server.add') }}</button>
+      </div>
+
+      <!-- ================= OVERVIEW ================= -->
+      <template v-if="view === 'dash' && servers.length">
+        <div class="grid c4">
+          <div class="stat">
+            <div class="k"><span class="ic" v-html="ic('down')"></span>{{ t('overview.dl') }}</div>
+            <div class="v dl">{{ fmt.fmtSpeed(stats.dl_info_speed) }}</div>
+            <div class="s">{{ t('overview.session', { v: fmt.fmtBytes(stats.dl_info_data) }) }}</div>
+          </div>
+          <div class="stat">
+            <div class="k"><span class="ic" v-html="ic('up')"></span>{{ t('overview.ul') }}</div>
+            <div class="v ul">{{ fmt.fmtSpeed(stats.up_info_speed) }}</div>
+            <div class="s">{{ t('overview.session', { v: fmt.fmtBytes(stats.up_info_data) }) }}</div>
+          </div>
+          <div class="stat">
+            <div class="k"><span class="ic" v-html="ic('list')"></span>{{ t('overview.active') }}</div>
+            <div class="v">{{ counts.active }}</div>
+            <div class="s">{{ t('overview.seedingPaused', { s: counts.seeding, p: counts.paused }) }}</div>
+          </div>
+          <div class="stat">
+            <div class="k"><span class="ic" v-html="ic('hdd')"></span>{{ t('overview.disk') }}</div>
+            <div class="v">{{ stats.free_space_on_disk ? fmt.fmtBytes(stats.free_space_on_disk) : '—' }}</div>
+            <div class="s">{{ connLabel(stats.connection_status) }}</div>
+          </div>
+        </div>
+
+        <div class="grid c2" style="margin-top:var(--gap)">
+          <div class="card">
+            <h3>{{ t('overview.distribution') }}</h3>
+            <div class="row" style="gap:18px;align-items:center">
+              <div style="width:132px;height:132px;flex:0 0 132px">
+                <canvas ref="donutCanvas"></canvas>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div class="row" v-for="seg in statusSegments" :key="seg.label" style="padding:5px 0">
+                  <i class="dot" :style="{ background: seg.color }"></i>
+                  <span class="ellipsis">{{ seg.label }}</span>
+                  <div class="spacer"></div>
+                  <b class="mono">{{ seg.value }}</b>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>{{ t('overview.realtime') }}</h3>
+              <div class="spacer"></div>
+              <span class="legend"><i class="dot" style="background:var(--dl)"></i>{{ t('overview.legendDl') }}</span>
+              <span class="legend"><i class="dot" style="background:var(--ul)"></i>{{ t('overview.legendUl') }}</span>
+            </div>
+            <div class="chart-box" style="height:132px">
+              <canvas ref="speedCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:var(--gap)">
+          <h3>{{ t('overview.recent') }}</h3>
+          <div v-if="!recent.length" class="faint" style="padding:8px 0">{{ t('overview.noTasks') }}</div>
+          <div v-for="t2 in recent" :key="t2.hash" style="padding:7px 0;cursor:pointer" @click="openDetail(t2.hash)">
+            <div class="row">
+              <span class="ellipsis" style="flex:1;font-size:13px">{{ t2.name }}</span>
+              <span class="mono faint">{{ fmt.fmtPercent(t2.progress, 0) }}</span>
+            </div>
+            <div class="progress" :class="progressClass(t2)" style="margin-top:5px">
+              <i :style="{ width: Math.max(0, Math.min(100, t2.progress * 100)) + '%' }"></i>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ================= TORRENTS ================= -->
+      <template v-if="view === 'torrents' && servers.length">
+        <div class="toolbar">
+          <input class="input" style="width:240px" v-model="search" :placeholder="t('torrents.search')">
+          <div class="seg">
+            <button v-for="f in filters" :key="f" :class="{ on: filter === f }" @click="filter = f">
+              {{ t('torrents.filter.' + f) }}
+            </button>
+          </div>
+          <select v-if="!isMobile" class="select" v-model="sortKey" style="width:150px">
+            <option v-for="k in sortKeys" :key="k" :value="k">{{ t('torrents.sort.' + k) }}</option>
+          </select>
+          <button v-else type="button" class="select picker-trigger" style="width:auto;min-width:120px;flex:0 1 auto"
+                  @click="openPicker({
+                    title: t('torrents.sortTitle'),
+                    value: sortKey,
+                    options: sortKeys.map(function (k) { return { value: k, label: t('torrents.sort.' + k) }; }),
+                    onPick: (v) => { sortKey = v; }
+                  })"><span class="v">{{ sortLabel() }}</span></button>
+          <button class="icon-btn" @click="sortAsc = !sortAsc"
+                  :title="sortAsc ? t('torrents.sortAsc') : t('torrents.sortDesc')">
+            <span v-html="ic(sortAsc ? 'sortAsc' : 'sortDesc')"></span>
+          </button>
+          <div class="spacer"></div>
+          <button class="btn primary" @click="openAdd">
+            <span class="ic" v-html="ic('plus')"></span>{{ t('torrents.add') }}
+          </button>
+        </div>
+
+        <div class="toolbar" v-if="selection.length">
+          <span class="chip">{{ t('torrents.selected', { n: selection.length }) }}</span>
+          <button class="btn sm" @click="bulk('pause')">{{ t('torrents.pause') }}</button>
+          <button class="btn sm" @click="bulk('resume')">{{ t('torrents.resume') }}</button>
+          <button class="btn sm" @click="bulk('recheck')">{{ t('torrents.recheck') }}</button>
+          <button class="btn sm" @click="openLimit">{{ t('torrents.limit') }}</button>
+          <button class="btn sm danger" @click="askDelete(selectedTorrents)">{{ t('torrents.delete') }}</button>
+          <div class="spacer"></div>
+          <!-- bare ghost button disappears against the dark card on a phone; show
+               it as a real button with border and tinted background instead. -->
+          <button class="btn sm" @click="selection = []">{{ t('torrents.clearSel') }}</button>
+        </div>
+
+        <div class="card flush">
+          <div v-if="!isMobile" style="overflow-x:auto">
+            <table class="ttable tlist">
+              <thead>
+                <tr>
+                  <th style="width:38px">
+                    <input type="checkbox" :checked="allSelected" @change="toggleAll($event.target.checked)">
+                  </th>
+                  <th class="sortable" @click="setSort('name')">{{ t('table.name') }}</th>
+                  <th style="width:168px">{{ t('table.progress') }}</th>
+                  <th class="num hide-sm" style="width:112px">{{ t('table.speed') }}</th>
+                  <th class="num hide-sm" style="width:92px">{{ t('table.size') }}</th>
+                  <th class="num hide-md" style="width:82px">{{ t('table.eta') }}</th>
+                  <th class="num hide-md" style="width:72px">{{ t('table.ratio') }}</th>
+                  <th class="acts" style="width:92px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="t1 in visibleTorrents" :key="t1.hash" :class="{ sel: selection.indexOf(t1.hash) >= 0 }">
+                  <td><input type="checkbox" :value="t1.hash" v-model="selection"></td>
+                  <td>
+                    <div class="name ellipsis" style="cursor:pointer" @click="openDetail(t1.hash)" :title="t1.name">{{ t1.name }}</div>
+                    <div class="sub">
+                      <span :style="{ color: fmt.toneColor(stLabel(t1.state).tone) }">{{ stLabel(t1.state).label }}</span>
+                      <span v-if="t1.category">· {{ t1.category }}</span>
+                      <span v-if="t1.num_seeds || t1.num_leechs">
+                        · {{ t('torrents.seeds', { s: t1.num_seeds, p: t1.num_leechs }) }}
+                      </span>
+                      <span v-if="t1.error_str" style="color:var(--danger)">· {{ t1.error_str }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="progress" :class="progressClass(t1)">
+                      <i :style="{ width: Math.max(0, Math.min(100, t1.progress * 100)) + '%' }"></i>
+                    </div>
+                    <div class="faint mono pmeta">
+                      {{ fmt.fmtPercent(t1.progress) }} · {{ fmt.fmtBytes(t1.completed) }}
+                    </div>
+                  </td>
+                  <td class="num hide-sm mono">
+                    <div class="arrow-dl" v-if="t1.dlspeed">↓ {{ fmt.fmtSpeed(t1.dlspeed) }}</div>
+                    <div class="arrow-ul" v-if="t1.upspeed">↑ {{ fmt.fmtSpeed(t1.upspeed) }}</div>
+                    <div class="faint" v-if="!t1.dlspeed && !t1.upspeed">—</div>
+                  </td>
+                  <td class="num hide-sm mono">{{ fmt.fmtBytes(t1.size) }}</td>
+                  <td class="num hide-md mono">{{ fmt.fmtEta(t1.eta) }}</td>
+                  <td class="num hide-md mono">{{ fmt.fmtRatio(t1.ratio) }}</td>
+                  <td class="acts">
+                    <button class="btn sm icon" @click="togglePause(t1)"
+                            :title="fmt.isPaused(t1) ? t('torrents.resume') : t('torrents.pause')">
+                      <span v-html="ic(fmt.isPaused(t1) ? 'play' : 'pause')"></span>
+                    </button>
+                    <button class="btn sm icon danger" @click="askDelete([t1])" :title="t('torrents.delete')">
+                      <span v-html="ic('trash')"></span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- phone layout: one card per torrent -->
+          <div v-else class="tcards">
+            <div class="tcard" v-for="t1 in visibleTorrents" :key="t1.hash"
+                 :class="{ sel: selection.indexOf(t1.hash) >= 0 }">
+              <div class="row" style="align-items:flex-start;gap:9px">
+                <input type="checkbox" :value="t1.hash" v-model="selection" style="margin-top:4px">
+                <div style="flex:1;min-width:0">
+                  <div class="tname ellipsis" style="font-weight:500;cursor:pointer" @click="openDetail(t1.hash)" :title="t1.name">{{ t1.name }}</div>
+                  <div class="sub">
+                    <span :style="{ color: fmt.toneColor(stLabel(t1.state).tone) }">{{ stLabel(t1.state).label }}</span>
+                    <span v-if="t1.category">· {{ t1.category }}</span>
+                  </div>
+                </div>
+                <div class="row" style="gap:5px">
+                  <button class="btn sm icon" @click="togglePause(t1)"
+                          :title="fmt.isPaused(t1) ? t('torrents.resume') : t('torrents.pause')">
+                    <span v-html="ic(fmt.isPaused(t1) ? 'play' : 'pause')"></span>
+                  </button>
+                  <button class="btn sm icon danger" @click="askDelete([t1])" :title="t('torrents.delete')">
+                    <span v-html="ic('trash')"></span>
+                  </button>
+                </div>
+              </div>
+              <div class="progress" :class="progressClass(t1)" style="margin-top:11px">
+                <i :style="{ width: Math.max(0, Math.min(100, t1.progress * 100)) + '%' }"></i>
+              </div>
+              <div class="tcmeta">
+                <span class="mono">{{ fmt.fmtPercent(t1.progress) }}</span>
+                <span class="faint">·</span>
+                <span class="mono faint">{{ fmt.fmtBytes(t1.completed) }} / {{ fmt.fmtBytes(t1.size) }}</span>
+              </div>
+              <div class="tcmeta">
+                <span class="arrow-dl mono" v-if="t1.dlspeed">↓ {{ fmt.fmtSpeed(t1.dlspeed) }}</span>
+                <span class="arrow-ul mono" v-if="t1.upspeed">↑ {{ fmt.fmtSpeed(t1.upspeed) }}</span>
+                <span class="faint" v-if="!t1.dlspeed && !t1.upspeed">—</span>
+                <div class="spacer"></div>
+                <span class="faint mono">{{ t('table.eta') }} {{ fmt.fmtEta(t1.eta) }}</span>
+                <span class="faint mono">×{{ fmt.fmtRatio(t1.ratio) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="empty" v-if="!visibleTorrents.length">
+            <span class="big" v-html="ic('list')"></span>
+            <span>{{ torrents.length ? t('torrents.noMatch') : t('torrents.empty') }}</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- ================= SERVERS ================= -->
+      <template v-if="view === 'servers'">
+        <div class="toolbar">
+          <div class="spacer"></div>
+          <button class="btn primary" @click="openServerForm(null)">
+            <span class="ic" v-html="ic('plus')"></span>{{ t('server.add') }}
+          </button>
+        </div>
+        <div class="grid c2">
+          <div class="card" v-for="s in servers" :key="s.id">
+            <div class="row">
+              <b class="ellipsis">{{ s.name }}</b>
+              <span class="chip" v-if="s.id === currentId">{{ t('server.current') }}</span>
+              <div class="spacer"></div>
+              <span class="chip">
+                <i class="dot" :class="serverState[s.id] === true ? 'on' : serverState[s.id] === false ? 'err' : (serverState[s.id] === 'testing' ? 'warn' : '')"></i>
+                {{ serverState[s.id] === true ? t('server.online')
+                   : serverState[s.id] === false ? t('server.offline')
+                   : serverState[s.id] === 'testing' ? t('server.testing')
+                   : t('server.unknown') }}
+              </span>
+            </div>
+            <div class="mono dim ellipsis" style="margin:10px 0" :title="s.url">{{ s.url }}</div>
+            <div class="row wrap" style="gap:6px">
+              <span class="chip">{{ s.kind === 'transmission' ? 'Transmission' : 'qBittorrent' }}</span>
+              <span class="chip" v-if="s.username">{{ s.username }}</span>
+              <span class="chip">{{ s.verify_ssl ? 'TLS' : 'no-TLS' }}</span>
+            </div>
+            <div class="sep"></div>
+            <div class="row wrap" style="gap:8px">
+              <button class="btn sm" @click="testServer(s)">{{ t('server.test') }}</button>
+              <button class="btn sm" v-if="s.id !== currentId" @click="switchServer(s.id)">{{ t('server.setCurrent') }}</button>
+              <button class="btn sm" @click="openServerForm(s)">{{ t('server.edit') }}</button>
+              <div class="spacer"></div>
+              <button class="btn sm danger" @click="askDeleteServer(s)">{{ t('server.delete') }}</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ================= STATS ================= -->
+      <template v-if="view === 'stats' && servers.length">
+        <div class="grid c3">
+          <div class="stat">
+            <div class="k">{{ t('stats.cumDl') }}</div>
+            <div class="v dl">{{ fmt.fmtBytes(stats.alltime_dl) }}</div>
+            <div class="s">{{ t('stats.session', { v: fmt.fmtBytes(stats.dl_info_data) }) }}</div>
+          </div>
+          <div class="stat">
+            <div class="k">{{ t('stats.cumUl') }}</div>
+            <div class="v ul">{{ fmt.fmtBytes(stats.alltime_ul) }}</div>
+            <div class="s">{{ t('stats.session', { v: fmt.fmtBytes(stats.up_info_data) }) }}</div>
+          </div>
+          <div class="stat">
+            <div class="k">{{ t('stats.globalRatio') }}</div>
+            <div class="v">{{ stats.global_ratio || '—' }}</div>
+            <div class="s">{{ t('stats.connStatus', { v: connLabel(stats.connection_status) }) }}</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:var(--gap)">
+          <div class="card-head">
+            <h3>{{ t('stats.trend') }}</h3>
+            <div class="spacer"></div>
+            <span class="legend"><i class="dot" style="background:var(--dl)"></i>{{ t('overview.legendDl') }}</span>
+            <span class="legend"><i class="dot" style="background:var(--ul)"></i>{{ t('overview.legendUl') }}</span>
+          </div>
+          <div class="chart-box" style="height:200px"><canvas ref="statsCanvas"></canvas></div>
+        </div>
+
+        <div class="grid c2" style="margin-top:var(--gap)">
+          <div class="card">
+            <h3>{{ t('stats.distribution') }}</h3>
+            <div class="row" style="gap:18px;align-items:center">
+              <div style="width:140px;height:140px;flex:0 0 140px">
+                <canvas ref="statsDonut"></canvas>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div class="row" v-for="seg in statusSegments" :key="seg.label" style="padding:5px 0">
+                  <i class="dot" :style="{ background: seg.color }"></i>
+                  <span class="ellipsis">{{ seg.label }}</span>
+                  <div class="spacer"></div>
+                  <b class="mono">{{ seg.value }}</b>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>{{ t('stats.categories') }}</h3>
+            <div v-if="!categorySegments.length" class="faint" style="padding:12px 0">{{ t('stats.noCategories') }}</div>
+            <div v-for="c in categorySegments" :key="c.label" style="padding:6px 0">
+              <div class="row">
+                <span class="ellipsis">{{ c.label || t('stats.uncategorized') }}</span>
+                <div class="spacer"></div>
+                <span class="mono faint">{{ fmt.fmtBytes(c.value) }}</span>
+              </div>
+              <div class="progress" style="margin-top:5px">
+                <i :style="{ width: (c.value / maxCategory * 100) + '%' }"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ================= LOGS ================= -->
+      <template v-if="view === 'logs' && servers.length">
+        <div class="toolbar">
+          <div class="seg">
+            <button v-for="l in logLevels" :key="l" :class="{ on: logLevel === l }"
+                    @click="logLevel = l; loadLogs()">{{ t('logs.level.' + l) }}</button>
+          </div>
+          <div class="spacer"></div>
+          <label class="switch"><input type="checkbox" v-model="logAuto"> {{ t('logs.auto') }}</label>
+          <button class="btn sm" @click="loadLogs()">{{ t('logs.refresh') }}</button>
+        </div>
+        <div class="card" style="max-height:70vh;overflow:auto">
+          <div v-for="(l, i) in logs" :key="i" class="logline" :class="l.type">
+            <span class="t">
+              <span class="d">{{ logDate(l.timestamp) }}</span>
+              <span class="h">{{ logTime(l.timestamp) }}</span>
+            </span>
+            <span class="m">{{ l.message }}</span>
+          </div>
+          <div class="empty" v-if="!logs.length">{{ t('logs.empty') }}</div>
+        </div>
+      </template>
+
+      <!-- ================= SETTINGS ================= -->
+      <template v-if="view === 'settings'">
+        <div class="card">
+          <h3>{{ t('settings.panel') }}</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label>{{ t('settings.theme') }}</label>
+              <select v-if="!isMobile" class="select" :value="settings.theme_mode" @change="setThemeMode($event.target.value)">
+                <option value="dark">{{ t('settings.theme.dark') }}</option>
+                <option value="light">{{ t('settings.theme.light') }}</option>
+                <option value="system">{{ t('settings.theme.system') }}</option>
+              </select>
+              <button v-else type="button" class="select picker-trigger" @click="openPicker({
+                title: t('settings.theme'),
+                value: settings.theme_mode,
+                options: [
+                  { value: 'dark', label: t('settings.theme.dark') },
+                  { value: 'light', label: t('settings.theme.light') },
+                  { value: 'system', label: t('settings.theme.system') }
+                ],
+                onPick: setThemeMode
+              })"><span class="v">{{ themeLabel() }}</span></button>
+            </div>
+            <div class="field">
+              <label>{{ t('settings.interval') }}</label>
+              <select v-if="!isMobile" class="select" :value="settings.refresh_ms"
+                      @change="settings.refresh_ms = Number($event.target.value); saveSettings()">
+                <option :value="1000">1 s</option>
+                <option :value="2000">2 s</option>
+                <option :value="3000">3 s</option>
+                <option :value="5000">5 s</option>
+                <option :value="10000">10 s</option>
+              </select>
+              <button v-else type="button" class="select picker-trigger" @click="openPicker({
+                title: t('settings.interval'),
+                value: String(settings.refresh_ms),
+                options: [
+                  { value: '1000', label: '1 s' },
+                  { value: '2000', label: '2 s' },
+                  { value: '3000', label: '3 s' },
+                  { value: '5000', label: '5 s' },
+                  { value: '10000', label: '10 s' }
+                ],
+                onPick: (v) => { settings.refresh_ms = Number(v); saveSettings(); }
+              })"><span class="v">{{ intervalLabel() }}</span></button>
+              <div class="hint">{{ t('settings.intervalHint') }}</div>
+            </div>
+            <div class="field full">
+              <label>{{ t('settings.confirmDelete') }}</label>
+              <label class="switch">
+                <input type="checkbox" v-model="settings.confirm_delete" @change="saveSettings">
+                <span>{{ t('settings.on') }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" v-if="servers.length">
+          <h3>{{ t('settings.downloader') }}</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label>{{ t('settings.dlLimit') }}</label>
+              <div class="row">
+                <input class="input" type="number" min="0" step="any"
+                       :value="limitValue.dl" @input="limitValue.dl = $event.target.value">
+                <select v-if="!isMobile" class="select" style="width:90px;flex:0 0 90px" :value="limitUnit.dl"
+                        :aria-label="t('settings.limitUnit')"
+                        @change="setLimitUnit('dl', $event.target.value)">
+                  <option value="kB">kB/s</option>
+                  <option value="MB">MB/s</option>
+                </select>
+                <button v-else type="button" class="select picker-trigger"
+                        style="width:96px;flex:0 0 96px" @click="openPicker({
+                          title: t('settings.limitUnit'),
+                          value: limitUnit.dl,
+                          options: [{value:'kB',label:'kB/s'},{value:'MB',label:'MB/s'}],
+                          onPick: (v) => setLimitUnit('dl', v)
+                        })"><span class="v">{{ limitUnit.dl }}/s</span></button>
+                <button class="btn" @click="applyGlobalLimit('dl')">{{ t('settings.apply') }}</button>
+              </div>
+              <div class="hint">{{ t('settings.current', { v: fmt.fmtSpeed(prefs.dl_limit) }) }}</div>
+            </div>
+            <div class="field">
+              <label>{{ t('settings.ulLimit') }}</label>
+              <div class="row">
+                <input class="input" type="number" min="0" step="any"
+                       :value="limitValue.up" @input="limitValue.up = $event.target.value">
+                <select v-if="!isMobile" class="select" style="width:90px;flex:0 0 90px" :value="limitUnit.up"
+                        :aria-label="t('settings.limitUnit')"
+                        @change="setLimitUnit('up', $event.target.value)">
+                  <option value="kB">kB/s</option>
+                  <option value="MB">MB/s</option>
+                </select>
+                <button v-else type="button" class="select picker-trigger"
+                        style="width:96px;flex:0 0 96px" @click="openPicker({
+                          title: t('settings.limitUnit'),
+                          value: limitUnit.up,
+                          options: [{value:'kB',label:'kB/s'},{value:'MB',label:'MB/s'}],
+                          onPick: (v) => setLimitUnit('up', v)
+                        })"><span class="v">{{ limitUnit.up }}/s</span></button>
+                <button class="btn" @click="applyGlobalLimit('up')">{{ t('settings.apply') }}</button>
+              </div>
+              <div class="hint">{{ t('settings.current', { v: fmt.fmtSpeed(prefs.up_limit) }) }}</div>
+            </div>
+            <div class="field">
+              <label>{{ t('settings.savePath') }}</label>
+              <div class="row">
+                <input class="input" v-model="prefs.save_path">
+                <button class="btn" @click="applyPref('save_path')">{{ t('settings.apply') }}</button>
+              </div>
+            </div>
+          </div>
+          <div class="sep"></div>
+          <h3>{{ t('settings.connection') }}</h3>
+          <dl class="kv">
+            <dt>{{ t('settings.port') }}</dt><dd class="mono">{{ prefs.listen_port || '—' }}</dd>
+            <dt>{{ t('settings.connState') }}</dt><dd>{{ connLabel(stats.connection_status) }}</dd>
+            <dt>{{ t('settings.dht') }}</dt><dd class="mono">{{ stats.dht_nodes || 0 }}</dd>
+            <dt>{{ t('settings.qbVersion') }}</dt><dd class="mono">{{ qbVersion || '—' }}</dd>
+          </dl>
+        </div>
+
+        <!-- ---------- maintenance: export / import ---------- -->
+        <div class="card">
+          <h3>{{ t('settings.maintenance') }}</h3>
+          <p class="dim" style="margin:0 0 14px">{{ t('backup.desc') }}</p>
+          <div class="row wrap" style="gap:8px">
+            <button class="btn" type="button" @click="exportBackup">
+              <span class="ic" v-html="ic('download')"></span>{{ t('backup.export') }}
+            </button>
+            <button class="btn" @click="exportToFolder">
+              <span class="ic" v-html="ic('folder')"></span>{{ t('backup.toFolder') }}
+            </button>
+          </div>
+          <div class="hint" style="margin-top:9px">{{ t('backup.exportHint') }}</div>
+          <div class="sep"></div>
+          <div class="field">
+            <label>{{ t('backup.import') }}</label>
+            <div class="filepick">
+              <button class="btn" @click="$refs.backupInput.click()">
+                <span class="ic" v-html="ic('folder')"></span>{{ t('backup.choose') }}
+              </button>
+              <span class="filepick-name" :title="backupFile ? backupFile.name : ''">
+                {{ backupFile ? backupFile.name : t('file.none') }}
+              </span>
+              <input ref="backupInput" type="file" accept=".json,application/json" @change="onPickBackup">
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn primary" :disabled="!backupFile || busy" @click="doImport">{{ t('backup.import') }}</button>
+            </div>
+            <div class="hint">{{ t('backup.importWarning') }}</div>
+          </div>
+        </div>
+
+        <!-- ---------- automatic backup ---------- -->
+        <div class="card">
+          <h3>{{ t('auto.title') }}</h3>
+          <p class="dim" style="margin:0 0 14px">{{ t('auto.desc') }}</p>
+          <div class="form-grid">
+            <div class="field full">
+              <label>{{ t('auto.enabled') }}</label>
+              <label class="switch">
+                <input type="checkbox" v-model="autoForm.enabled">
+                <span>{{ autoForm.enabled ? t('settings.on') : t('auto.none') }}</span>
+              </label>
+            </div>
+            <div class="field">
+              <label>{{ t('auto.interval') }}</label>
+              <input class="input" type="number" v-model.number="autoForm.interval"
+                     :min="autoStatus.interval_min || 1" :max="autoStatus.interval_max || 8760">
+              <div class="hint">{{ t('auto.intervalHelp') }}</div>
+            </div>
+            <div class="field">
+              <label>{{ t('auto.retention') }}</label>
+              <input class="input" type="number" v-model.number="autoForm.retention"
+                     :min="autoStatus.retention_min || 1" :max="autoStatus.retention_max || 3650">
+              <div class="hint">{{ t('auto.retentionHelp') }}</div>
+            </div>
+          </div>
+          <dl class="kv" style="margin-top:14px">
+            <dt>{{ t('auto.directory') }}</dt><dd class="mono">{{ autoStatus.directory || '—' }}</dd>
+            <dt>{{ t('auto.lastSuccess') }}</dt><dd>{{ autoStatus.last_success ? fmt.fmtDate(autoStatus.last_success) : t('auto.none') }}</dd>
+            <dt>{{ t('auto.nextRun') }}</dt><dd>{{ autoStatus.next_run ? fmt.fmtDate(autoStatus.next_run) : t('auto.none') }}</dd>
+            <dt>{{ t('auto.lastError') }}</dt>
+            <dd :style="{ color: autoStatus.last_error ? 'var(--danger)' : '' }">{{ autoStatus.last_error || t('auto.none') }}</dd>
+          </dl>
+          <div class="sep"></div>
+          <div class="row wrap" style="gap:8px">
+            <button class="btn primary" @click="saveAuto">{{ t('server.save') }}</button>
+            <button class="btn" @click="runBackupNow">{{ t('auto.runNow') }}</button>
+          </div>
+        </div>
+
+        <!-- ---------- backup list ---------- -->
+        <div class="card">
+          <div class="card-head">
+            <h3>{{ t('backup.listTitle') }}</h3>
+            <div class="spacer"></div>
+            <span class="chip">{{ (autoStatus.backups || []).length }}</span>
+          </div>
+          <div v-if="!(autoStatus.backups || []).length" class="faint">{{ t('backup.empty') }}</div>
+<!-- tbackup: table-layout:fixed so the mono filename ellipsises instead of
+             widening the page (a 37-char backup name pushed the whole
+             document ~140px past a 360px phone viewport). -->
+          <table class="ttable tbackup" v-else>
+            <thead>
+              <tr>
+                <th>{{ t('backup.createdAt') }}</th>
+                <th class="num" style="width:96px">{{ t('table.size') }}</th>
+                <th class="acts" style="width:158px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="b in autoStatus.backups" :key="b.name">
+                <td class="mono ellipsis" :title="b.name">{{ b.name }}</td>
+                <td class="num mono">{{ fmt.fmtBytes(b.size) }}</td>
+                <td class="acts">
+                  <button class="btn sm" @click="askRestore(b)">{{ t('backup.restore') }}</button>
+                  <button class="btn sm danger" @click="askDeleteBackup(b)">{{ t('backup.delete') }}</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
+    </div>
+  </div>
+</div>
+
+<!-- ================= torrent detail drawer ================= -->
+<div class="mask" v-if="detail" @click.self="closeDetail">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div style="flex:1;min-width:0">
+        <div class="t">{{ detail.name }}</div>
+        <div class="row wrap" style="margin-top:8px;gap:6px">
+          <span class="chip" :style="{ color: fmt.toneColor(stLabel(detail.state).tone) }">{{ stLabel(detail.state).label }}</span>
+          <span class="chip" v-if="detail.category">{{ detail.category }}</span>
+          <span class="chip" v-for="tg in (detail.tags ? detail.tags.split(',').filter(Boolean) : [])" :key="tg">{{ tg }}</span>
+        </div>
+      </div>
+      <button class="icon-btn ghost" @click="closeDetail"><span v-html="ic('close')"></span></button>
+    </div>
+
+    <div class="drawer-body">
+      <div class="progress" :class="progressClass(detail)" style="height:8px;margin-bottom:8px">
+        <i :style="{ width: Math.max(0, Math.min(100, detail.progress * 100)) + '%' }"></i>
+      </div>
+      <div class="row" style="margin-bottom:16px">
+        <span class="mono">{{ fmt.fmtPercent(detail.progress) }}</span>
+        <span class="faint">·</span>
+        <span class="mono faint">{{ fmt.fmtBytes(detail.completed) }} / {{ fmt.fmtBytes(detail.size) }}</span>
+        <div class="spacer"></div>
+        <span class="arrow-dl mono" v-if="detail.dlspeed">↓ {{ fmt.fmtSpeed(detail.dlspeed) }}</span>
+        <span class="arrow-ul mono" v-if="detail.upspeed">↑ {{ fmt.fmtSpeed(detail.upspeed) }}</span>
+      </div>
+
+      <div class="tabs">
+        <button v-for="tb in detailTabs" :key="tb" :class="{ on: detailTab === tb }"
+                @click="detailTab = tb; onDetailTab(tb)">{{ t('detail.tab.' + tb) }}</button>
+      </div>
+
+      <div v-if="detailTab === 'general'">
+        <div v-if="propsLoading" class="empty">{{ t('detail.loading') }}</div>
+        <dl class="kv" v-else-if="props">
+          <dt>{{ t('detail.totalSize') }}</dt><dd>{{ fmt.fmtBytes(props.total_size) }}</dd>
+          <dt>{{ t('detail.downloaded') }}</dt><dd>{{ fmt.fmtBytes(detail.downloaded) }}</dd>
+          <dt>{{ t('detail.uploaded') }}</dt><dd>{{ fmt.fmtBytes(detail.uploaded) }}</dd>
+          <dt>{{ t('detail.ratio') }}</dt><dd>{{ fmt.fmtRatio(detail.ratio) }}</dd>
+          <dt>{{ t('detail.avgDl') }}</dt><dd>{{ fmt.fmtSpeed(props.dl_speed_avg) }}</dd>
+          <dt>{{ t('detail.avgUl') }}</dt><dd>{{ fmt.fmtSpeed(props.up_speed_avg) }}</dd>
+          <dt>{{ t('detail.eta') }}</dt><dd>{{ fmt.fmtEta(detail.eta) }}</dd>
+          <dt>{{ t('detail.seedsPeers') }}</dt><dd>{{ fmt.fmtNum(detail.num_seeds) }} / {{ fmt.fmtNum(detail.num_leechs) }}</dd>
+          <dt>{{ t('detail.connected') }}</dt><dd>{{ fmt.fmtNum(detail.num_leechs_connected || props.connections) }}</dd>
+          <dt>{{ t('detail.connLimit') }}</dt><dd>{{ fmt.fmtNum(detail.connections_limit) }}</dd>
+          <dt>{{ t('detail.pieces') }}</dt><dd>{{ props.pieces_have }} / {{ props.pieces_num }} × {{ fmt.fmtBytes(props.piece_size) }}</dd>
+          <dt>{{ t('detail.savePath') }}</dt><dd class="mono">{{ detail.save_path }}</dd>
+          <dt>{{ t('detail.hash') }}</dt><dd class="mono">{{ detail.hash }}</dd>
+          <dt>{{ t('detail.addedOn') }}</dt><dd>{{ fmt.fmtDate(detail.added_on) }}</dd>
+          <dt>{{ t('detail.completedOn') }}</dt><dd>{{ detail.completion_on > 0 ? fmt.fmtDate(detail.completion_on) : t('detail.notFinished') }}</dd>
+          <dt>{{ t('detail.activeTime') }}</dt><dd>{{ fmt.fmtDuration(props.time_elapsed) }}</dd>
+          <dt>{{ t('detail.createdBy') }}</dt><dd>{{ props.created_by || '—' }}</dd>
+          <dt>{{ t('detail.publishDate') }}</dt><dd>{{ props.creation_date ? fmt.fmtDate(props.creation_date) : '—' }}</dd>
+          <dt>{{ t('detail.private') }}</dt><dd>{{ props.is_private ? '✓' : '—' }}</dd>
+          <dt>{{ t('detail.comment') }}</dt><dd>{{ props.comment || '—' }}</dd>
+        </dl>
+        <div class="empty" v-else>{{ t('detail.noData') }}</div>
+
+        <div class="sep"></div>
+        <div class="row wrap" style="gap:8px">
+          <button class="btn sm" @click="togglePause(detail)">{{ fmt.isPaused(detail) ? t('torrents.resume') : t('torrents.pause') }}</button>
+          <button class="btn sm" @click="torrentAction('recheck', detail)">{{ t('detail.action.recheck') }}</button>
+          <button class="btn sm" @click="torrentAction('reannounce', detail)">{{ t('detail.action.reannounce') }}</button>
+          <button class="btn sm" @click="torrentAction('increasePrio', detail)">{{ t('detail.action.upPrio') }}</button>
+          <button class="btn sm" @click="torrentAction('decreasePrio', detail)">{{ t('detail.action.downPrio') }}</button>
+          <div class="spacer"></div>
+          <button class="btn sm danger" @click="askDelete([detail])">{{ t('detail.action.delete') }}</button>
+        </div>
+      </div>
+
+      <div v-if="detailTab === 'files'">
+        <div v-if="filesLoading" class="empty">{{ t('detail.loading') }}</div>
+        <table class="ttable" v-else-if="files.length">
+          <thead>
+            <tr>
+              <th>{{ t('detail.file') }}</th>
+              <th class="num" style="width:92px">{{ t('table.size') }}</th>
+              <th style="width:132px">{{ t('table.progress') }}</th>
+              <th style="width:112px">{{ t('detail.priority') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(f, i) in files" :key="i">
+              <td class="ellipsis" style="max-width:280px" :title="f.name">{{ f.name }}</td>
+              <td class="num mono">{{ fmt.fmtBytes(f.size) }}</td>
+              <td><div class="progress" :class="f.progress >= 1 ? 'done' : ''"><i :style="{ width: (f.progress * 100) + '%' }"></i></div></td>
+              <td>
+                <select v-if="!isMobile" class="select" style="height:30px;font-size:13px" :value="f.priority"
+                        @change="setFilePrio(i, $event.target.value)">
+                  <option value="0">{{ t('detail.prio.skip') }}</option>
+                  <option value="1">{{ t('detail.prio.normal') }}</option>
+                  <option value="6">{{ t('detail.prio.high') }}</option>
+                  <option value="7">{{ t('detail.prio.max') }}</option>
+                </select>
+                <button v-else type="button" class="select picker-trigger"
+                        style="height:30px;font-size:13px" @click="openPicker({
+                          title: f.name,
+                          value: String(f.priority),
+                          options: [
+                            { value: '0', label: t('detail.prio.skip') },
+                            { value: '1', label: t('detail.prio.normal') },
+                            { value: '6', label: t('detail.prio.high') },
+                            { value: '7', label: t('detail.prio.max') }
+                          ],
+                          onPick: (v) => setFilePrio(i, v)
+                        })"><span class="v">{{ filePrioLabel(f.priority) }}</span></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty" v-else>{{ t('detail.noFiles') }}</div>
+      </div>
+
+      <div v-if="detailTab === 'trackers'">
+        <div v-if="trackersLoading" class="empty">{{ t('detail.loading') }}</div>
+        <table class="ttable" v-else-if="trackers.length">
+          <thead>
+            <tr>
+              <th>{{ t('detail.tracker') }}</th>
+              <th style="width:86px">{{ t('detail.trackerStatus') }}</th>
+              <th class="num" style="width:72px">{{ t('detail.peersCol') }}</th>
+              <th style="width:150px">{{ t('detail.message') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(tr, i) in trackers" :key="i">
+              <td class="mono ellipsis" style="max-width:280px" :title="tr.url">{{ tr.url }}</td>
+              <td>{{ trackerStatus(tr.status) }}</td>
+              <td class="num mono">{{ tr.num_peers }}</td>
+              <td class="faint ellipsis" style="max-width:180px" :title="tr.msg">{{ tr.msg || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty" v-else>{{ t('detail.noTrackers') }}</div>
+      </div>
+
+      <div v-if="detailTab === 'peers'">
+        <div v-if="peersLoading" class="empty">{{ t('detail.loading') }}</div>
+        <table class="ttable" v-else-if="peers.length">
+          <thead>
+            <tr>
+              <th>{{ t('detail.peerAddr') }}</th>
+              <th class="num hide-sm" style="width:82px">{{ t('detail.port') }}</th>
+              <th style="width:150px">{{ t('detail.client') }}</th>
+              <th style="width:92px">{{ t('table.progress') }}</th>
+              <th class="num" style="width:112px">{{ t('table.speed') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(p, i) in peers" :key="i">
+              <td class="mono">{{ p.ip }}<span class="faint" v-if="p.origin"> · {{ p.origin }}</span></td>
+              <td class="num hide-sm mono">{{ p.port }}</td>
+              <td class="ellipsis" style="max-width:150px">{{ p.client || '—' }}</td>
+              <td class="mono">{{ fmt.fmtPercent(p.progress, 1) }}</td>
+              <td class="num mono">
+                <span class="arrow-dl" v-if="p.dl_speed">↓{{ fmt.fmtBytes(p.dl_speed) }}</span>
+                <span class="arrow-ul" v-if="p.up_speed"> ↑{{ fmt.fmtBytes(p.up_speed) }}</span>
+                <span class="faint" v-if="!p.dl_speed && !p.up_speed">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="empty" v-else>{{ t('detail.noPeers') }}</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ================= add torrent modal ================= -->
+<div class="modal-wrap" v-if="addOpen">
+  <div class="modal">
+    <div class="modal-head">{{ t('add.title') }}</div>
+    <div class="modal-body">
+      <div class="tabs">
+        <button :class="{ on: addTab === 'link' }" @click="addTab = 'link'">{{ t('add.tab.link') }}</button>
+        <button :class="{ on: addTab === 'file' }" @click="addTab = 'file'">{{ t('add.tab.file') }}</button>
+      </div>
+
+      <div class="field" v-if="addTab === 'link'">
+        <label>{{ t('add.urls') }}</label>
+        <textarea class="textarea" rows="5" v-model="addForm.urls" placeholder="magnet:?xt=urn:btih:…"></textarea>
+      </div>
+      <div class="field" v-else>
+        <label>{{ t('add.pick') }}</label>
+        <div class="filepick">
+          <button class="btn" @click="$refs.torrentInput.click()">
+            <span class="ic" v-html="ic('folder')"></span>{{ t('add.pick') }}
+          </button>
+          <span class="filepick-name" :title="addForm.file ? addForm.file.name : ''">
+            {{ addForm.file ? addForm.file.name : t('file.none') }}
+          </span>
+          <input ref="torrentInput" type="file" accept=".torrent,application/x-bittorrent" @change="onPickFile">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>{{ t('add.savePath') }}</label>
+        <input class="input" v-model="addForm.savepath" :placeholder="t('add.savePathPh')">
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>{{ t('add.category') }}</label>
+          <input class="input" v-model="addForm.category" :placeholder="t('add.optional')">
+        </div>
+        <div class="field">
+          <label>{{ t('add.tags') }}</label>
+          <input class="input" v-model="addForm.tags" :placeholder="t('add.optional')">
+        </div>
+      </div>
+      <div class="field">
+        <label class="switch">
+          <input type="checkbox" v-model="addForm.paused">
+          <span>{{ t('add.paused') }}</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn" @click="addOpen = false">{{ t('add.cancel') }}</button>
+      <button class="btn primary" :disabled="busy" @click="submitAdd">{{ t('add.confirm') }}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= server form modal ================= -->
+<div class="modal-wrap" v-if="serverForm">
+  <div class="modal">
+    <div class="modal-head">{{ serverForm.id ? t('server.edit') : t('server.add') }}</div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field">
+          <label>{{ t('server.name') }}</label>
+          <input class="input" v-model="serverForm.name" :placeholder="t('server.namePh')">
+        </div>
+        <div class="field">
+          <label>{{ t('server.type') }}</label>
+          <select v-if="!isMobile" class="select" v-model="serverForm.kind">
+            <option value="qbittorrent">qBittorrent</option>
+            <option value="transmission">Transmission</option>
+          </select>
+          <button v-else type="button" class="select picker-trigger" @click="openPicker({
+            title: t('server.type'),
+            value: serverForm.kind,
+            options: [{value:'qbittorrent',label:'qBittorrent'},{value:'transmission',label:'Transmission'}],
+            onPick: (v) => { serverForm.kind = v; }
+          })"><span class="v">{{ serverKindLabel() }}</span></button>
+        </div>
+      </div>
+      <div class="field">
+        <label>{{ t('server.url') }}</label>
+        <input class="input" v-model="serverForm.url" placeholder="http://127.0.0.1:8080">
+        <div class="hint">{{ t('server.urlHint') }}</div>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>{{ t('server.username') }}</label>
+          <input class="input" v-model="serverForm.username" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>{{ t('server.password') }}</label>
+          <input class="input" type="password" v-model="serverForm.password"
+                 :placeholder="serverForm.has_password ? t('server.passwordKeep') : ''" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="field">
+        <label class="switch">
+          <input type="checkbox" v-model="serverForm.verify_ssl">
+          <span>{{ t('server.verify') }}</span>
+        </label>
+      </div>
+      <div class="hint test-msg" v-if="serverTestMsg">{{ serverTestMsg }}</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" @click="testFormServer" :disabled="busy">{{ t('server.test') }}</button>
+      <div class="spacer"></div>
+      <button class="btn" @click="serverForm = null">{{ t('server.cancel') }}</button>
+      <button class="btn primary" :disabled="busy" @click="saveServer">{{ t('server.save') }}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= limit modal ================= -->
+<div class="modal-wrap" v-if="limitOpen">
+  <div class="modal" style="width:min(420px,100%)">
+    <div class="modal-head">{{ t('limit.title') }}</div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field">
+          <label>{{ t('limit.dl') }}</label>
+          <div class="row">
+            <input class="input" type="number" min="0" step="any"
+                   :value="limitForm.dl" @input="limitForm.dl = $event.target.value">
+            <select v-if="!isMobile" class="select" style="width:84px;flex:0 0 84px" :value="limitFormUnit.dl"
+                    :aria-label="t('settings.limitUnit')"
+                    @change="limitFormUnit.dl = $event.target.value">
+              <option value="kB">kB/s</option>
+              <option value="MB">MB/s</option>
+            </select>
+            <button v-else type="button" class="select picker-trigger"
+                    style="width:96px;flex:0 0 96px" @click="openPicker({
+                      title: t('settings.limitUnit'),
+                      value: limitFormUnit.dl,
+                      options: [{value:'kB',label:'kB/s'},{value:'MB',label:'MB/s'}],
+                      onPick: (v) => { limitFormUnit.dl = v; }
+                    })"><span class="v">{{ limitFormUnit.dl }}/s</span></button>
+          </div>
+        </div>
+        <div class="field">
+          <label>{{ t('limit.ul') }}</label>
+          <div class="row">
+            <input class="input" type="number" min="0" step="any"
+                   :value="limitForm.up" @input="limitForm.up = $event.target.value">
+            <select v-if="!isMobile" class="select" style="width:84px;flex:0 0 84px" :value="limitFormUnit.up"
+                    :aria-label="t('settings.limitUnit')"
+                    @change="limitFormUnit.up = $event.target.value">
+              <option value="kB">kB/s</option>
+              <option value="MB">MB/s</option>
+            </select>
+            <button v-else type="button" class="select picker-trigger"
+                    style="width:96px;flex:0 0 96px" @click="openPicker({
+                      title: t('settings.limitUnit'),
+                      value: limitFormUnit.up,
+                      options: [{value:'kB',label:'kB/s'},{value:'MB',label:'MB/s'}],
+                      onPick: (v) => { limitFormUnit.up = v; }
+                    })"><span class="v">{{ limitFormUnit.up }}/s</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="hint">{{ t('limit.scope', { n: selection.length }) }}</div>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn" @click="limitOpen = false">{{ t('add.cancel') }}</button>
+      <button class="btn primary" @click="applyLimit">{{ t('settings.apply') }}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= confirm ================= -->
+<div class="modal-wrap" v-if="confirmBox">
+  <div class="modal" style="width:min(420px,100%)">
+    <div class="modal-head">{{ confirmBox.title }}</div>
+    <div class="modal-body">
+      <div :style="{ marginBottom: confirmBox.askFiles ? '14px' : '0' }">{{ confirmBox.text }}</div>
+      <label class="switch" v-if="confirmBox.askFiles">
+        <input type="checkbox" v-model="confirmBox.deleteFiles">
+        <span>{{ t('confirm.deleteFiles') }}</span>
+      </label>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn" @click="confirmBox = null">{{ t('confirm.cancel') }}</button>
+      <button class="btn danger" @click="confirmBox.onOk(confirmBox)">{{ confirmBox.okText }}</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts">
+  <div v-for="tt in toasts" :key="tt.id" class="toast" :class="tt.kind">{{ tt.text }}</div>
+</div>
+
+<!-- mobile-only action-sheet picker that replaces OS-native select popover -->
+<div class="picker-mask" v-if="pickerState" @click.self="closePicker()">
+  <div class="picker-sheet" @click.stop>
+    <div class="picker-title">{{ pickerState.title }}</div>
+    <div class="picker-list">
+      <button v-for="o in pickerState.options" :key="o.value" type="button" class="picker-item"
+              @click="closePicker(o.value)">
+        <span class="lbl">{{ o.label }}</span>
+        <i class="dot" :class="{ on: String(o.value) === String(pickerState.value) }"></i>
+      </button>
+    </div>
+    <button type="button" class="btn picker-cancel" @click="closePicker()">{{ t('add.cancel') }}</button>
+  </div>
+</div>
+
+</div>
+
+<script src="./lib/vue.global.prod.js"></script>
+<script src="./js/i18n.js"></script>
+<script src="./js/util.js"></script>
+<script src="./js/api.js"></script>
+<script src="./js/charts.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>

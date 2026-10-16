@@ -1,0 +1,5 @@
+#!/bin/bash
+
+### Called before environment variables are applied from the settings page.
+
+exit 0

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+### Called before an upgrade: stop the running service.
+
+set -u
+
+MAIN_SCRIPT="$(dirname "$0")/main"
+
+if [ -x "${MAIN_SCRIPT}" ]; then
+    "${MAIN_SCRIPT}" stop >/dev/null 2>&1 || true
+fi
+
+exit 0
