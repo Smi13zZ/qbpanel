@@ -520,7 +520,7 @@ def make_client(server):
 # --------------------------------------------------------------------------
 # backups
 #
-# Two folders are involved, mirroring what 敲门knock does:
+# Two folders are involved:
 #   * the app share  - /vol1/@appshare/<appname> (declared via config/resource
 #     data-share) which the user can see in the fnOS file manager / over SMB;
 #     automatic backups are written to <share>/backups so they are reachable

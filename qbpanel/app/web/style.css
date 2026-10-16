@@ -1,4 +1,4 @@
-/* qbpanel - design tokens follow 敲门knock (shadcn / neutral scale)
+/* qbpanel - design tokens (shadcn / neutral scale)
  * light: surface #ffffff, sidebar #fafafa, muted #f5f5f5, border #e5e5e5, fg #0a0a0a
  * dark : surface #0a0a0a, sidebar #1c1c1c, muted #262626, border #ffffff1a, fg #fafafa
  * radius 10px, flat cards (no shadow), 400/500/600 weights only
@@ -24,7 +24,7 @@
 
   --primary: #1c1c1c;
   --primary-fg: #fafafa;
-  /* Active nav pill inverts with the theme, exactly like knock:
+  /* Active nav pill inverts with the theme:
      near-black + white text by day, near-white + dark text by night. */
   --nav-active: #1c1c1c;
   --nav-active-fg: #fafafa;
@@ -141,7 +141,7 @@ svg { display: block; }
 .nav-item .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
 .nav-item.on { background: var(--nav-active); color: var(--nav-active-fg); }
-/* knock draws its sidebar glyphs a touch heavier than the default 1.8 */
+/* sidebar glyphs are drawn a touch heavier than the default 1.8 */
 .side .nav-item svg, .side .ver-line svg { stroke-width: 2.1; }
 .nav-item .badge {
   font-size: 11px; font-weight: 600; line-height: 1;
@@ -504,7 +504,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
 .mobile-only { display: none; }
 
-/* Touch devices have no hover - keep row actions visible, like knock does. */
+/* Touch devices have no hover - keep row actions visible. */
 @media (hover: none) {
   .ttable .acts .btn { opacity: 1; }
 }
