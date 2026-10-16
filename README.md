@@ -11,6 +11,7 @@
 [功能](#功能一览) · [截图](#界面预览) · [安装](#安装) · [使用手册](#使用手册) · [常见问题](#常见问题) · [更新日志](CHANGELOG.md) · [开发说明](docs/DEVELOPMENT.md)
 
 📄 图文版教程：[docs/使用教程.html](docs/使用教程.html)（下载后用浏览器打开）
+🌍 English version：[README_EN.md](README_EN.md)
 
 </div>
 
