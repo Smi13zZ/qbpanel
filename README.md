@@ -303,4 +303,4 @@ Transmission 没有分类字段，面板取第一个标签作为分类；优先�
 
 [MIT](LICENSE) © 2026 Smi13zZ
 
-灵感来自把手机 BT 遥控 App 的体验搬进 NAS 桌面；界面设计参考了 fnOS 上「敲门 knock」的中性色风格。本项目与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
+本项目与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
