@@ -151,11 +151,21 @@ svg { display: block; }
   border-radius: 999px; background: var(--muted); color: var(--dim);
 }
 .nav-item.on .badge { background: color-mix(in srgb, var(--nav-active-fg) 14%, transparent); color: var(--nav-active-fg); }
-/* New-release marker: a corner dot instead of a count badge so it survives the
-   collapsed rail, where labels and badges are hidden. */
-.nav-dot {
-  position: absolute; top: 7px; right: 8px;
-  width: 7px; height: 7px; border-radius: 50%; background: var(--danger);
+/* New-release marker. It is a normal flex child (not absolutely placed), so it
+   lines up with the label's optical centre and sits at the trailing edge, the
+   same way the connection/alert dots do in other fnOS panels. The 2px ring in
+   the page colour keeps it legible on both the plain row and the inverted
+   active pill. */
+.nav-alert {
+  flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+/* Collapsed rail: the row is just a centred icon, so pin the dot to the rail's
+   trailing edge but keep it vertically centred - same reading as expanded. */
+.shell.collapsed .nav-item .nav-alert {
+  position: absolute; top: 50%; right: 3px;
+  transform: translateY(-50%); box-shadow: none;
 }
 .shell.collapsed .nav-item { justify-content: center; padding: 8px 0; gap: 0; }
 .shell.collapsed .nav-item .label,

@@ -23,9 +23,11 @@
         <span class="ic" v-html="ic(n.icon)"></span>
         <span class="label">{{ t(n.key) }}</span>
         <span class="badge" v-if="n.id === 'torrents' && torrentCount">{{ torrentCount }}</span>
-        <!-- new release available: a corner marker rather than a count badge,
-             so it stays visible when the sidebar is collapsed -->
-        <i class="nav-dot" v-if="n.id === 'settings' && updateNew" :title="t('update.available', { v: updateInfo.latest })"></i>
+        <!-- new release available: a flex child at the row's trailing edge, so
+             it is vertically centred with the label (not pinned to a corner) -->
+        <i class="nav-alert" v-if="n.id === 'settings' && updateNew" role="img"
+           :title="t('update.available', { v: updateInfo.latest })"
+           :aria-label="t('update.available', { v: updateInfo.latest })"></i>
       </button>
     </nav>
 
