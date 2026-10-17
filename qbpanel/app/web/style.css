@@ -530,6 +530,97 @@ input[type="number"] { -moz-appearance: textfield; }
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 
+/* ---------------- new-release banner (every view) ---------------- */
+.upbanner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 11px 14px; margin-bottom: var(--gap);
+  border: 1px solid color-mix(in srgb, var(--warn) 42%, var(--border));
+  background: color-mix(in srgb, var(--warn) 9%, var(--card));
+  border-radius: var(--radius-lg);
+}
+.upbanner-ic { flex: 0 0 22px; width: 22px; height: 22px; display: flex; align-items: center; color: var(--warn); }
+.upbanner-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.upbanner-text b { font-size: 13.5px; font-weight: 600; }
+.upbanner-text span { font-size: 12px; color: var(--dim); }
+.upbanner-x { width: 28px; height: 28px; flex: 0 0 28px; }
+
+/* ---------------- version hero ---------------- */
+.vhero {
+  display: flex; align-items: center; gap: 18px;
+  padding: 18px 16px; margin-bottom: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.vcol { flex: 1 1 0; min-width: 0; text-align: center; }
+.vk { font-size: 12px; color: var(--faint); }
+.vv {
+  margin-top: 4px; font-size: 26px; font-weight: 600; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.vv.fresh { color: var(--accent-bar); }
+.varrow { flex: 0 0 auto; display: flex; color: var(--faint); }
+
+.vstatus {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: var(--card);
+}
+.vstatus.has {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
+  background: color-mix(in srgb, var(--warn) 8%, var(--card));
+}
+.vsic {
+  flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--muted); color: var(--dim);
+}
+.vstatus.has .vsic {
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
+  color: color-mix(in srgb, var(--warn) 75%, var(--text));
+}
+.vstext { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 180px; }
+.vstext b { font-size: 13.5px; font-weight: 600; }
+.vstext span { font-size: 12px; color: var(--dim); }
+
+/* ---------------- settings switch rows / channels ---------------- */
+.swrow {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 0; border-bottom: 1px solid var(--border-soft);
+}
+.swrow.last { border-bottom: 0; padding-bottom: 2px; }
+.swtext { min-width: 0; flex: 1; }
+.swname { font-size: 13.5px; font-weight: 500; }
+.swrow .hint { margin-top: 2px; }
+.swrow .switch { margin-left: auto; flex: 0 0 auto; }
+
+.chlist { display: flex; flex-direction: column; gap: 8px; }
+.chrow {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+}
+.chico {
+  flex: 0 0 30px; width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--muted); color: var(--dim);
+}
+.chin { min-width: 0; }
+.chname { font-size: 13.5px; font-weight: 600; }
+.chmeta { font-size: 12px; color: var(--faint); margin-top: 1px; }
+
+/* ---------------- one-click update overlay ---------------- */
+.upoverlay {
+  position: fixed; inset: 0; z-index: 95; padding: 20px;
+  background: rgba(0, 0, 0, .5); display: grid; place-items: center;
+}
+.upoverlay-box {
+  width: min(400px, 100%); padding: 26px 22px; text-align: center;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-pop);
+}
+.upspin { display: inline-flex; color: var(--text); }
+.upspin svg { animation: qbspin 1s linear infinite; }
+@keyframes qbspin { to { transform: rotate(360deg); } }
+.uptitle { font-size: 15px; font-weight: 600; margin: 12px 0 6px; }
+
 /* ---------------- toasts / log ---------------- */
 .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; }
 .toast {
@@ -663,6 +754,28 @@ canvas { display: block; width: 100%; height: 100%; }
   .modal-foot { padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
   .tabs button { padding: 0 12px; }
   .workbar button { height: 34px; padding: 0 12px; }
+
+  /* Phone: headline owns the first row, the action drops to a full-width
+     second row (thumb reach), the close button rides along at the right. */
+  .upbanner { gap: 8px; padding: 10px 12px; }
+  .upbanner .spacer { display: none; }
+  .upbanner-btn { display: none; }
+  .upbanner-ic { order: 1; }
+  .upbanner-text { order: 2; flex: 1 1 calc(100% - 44px); }
+  .upbanner-text b { font-size: 13px; }
+  .upbanner .btn.primary { order: 3; flex: 1 1 auto; }
+  .upbanner-x { order: 4; }
+  .vhero { padding: 14px 10px; gap: 10px; }
+  .vv { font-size: 21px; }
+  .vstatus { gap: 10px; }
+  .vstext { flex: 1 1 100%; order: 2; }
+  .vstatus .btn { order: 3; flex: 1 1 auto; }
+  .chrow .btn { flex: 1 1 auto; }
+  .chrow { gap: 6px; }
+  .chrow .spacer { display: none; }
+  .chico { order: 1; }
+  .chin { order: 2; flex: 1 1 calc(100% - 46px); }
+  .chrow .btn { order: 3; }
 
   /* Backup rows on a phone: the fixed 96px size column left the filename with
      "qbpanel…" and every row looked identical. Drop the column, print the size

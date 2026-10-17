@@ -320,11 +320,11 @@ function summary(label, ok, detail) {
   await c.send("Page.navigate", { url: BASE + "/?view=settings" });
   await waitFor("!!document.querySelector('.card')", 12000);
   await sleep(1200);
-  // 26.10.21: settings is a sectioned work bar - the export controls live in
-  // the "backup & restore" section now, so open it first.
+  // 26.10.21: settings is a sectioned work bar; 26.10.22 merged the backup and
+  // auto-backup sections into "维护" / "Maintenance", where the export lives.
   await c.eval(`(function(){
     var b = Array.prototype.slice.call(document.querySelectorAll('.workbar button')).find(function(x){
-      return /备份|Backup/.test(x.textContent);
+      return /维护|Maintenance|备份|Backup/.test(x.textContent);
     });
     if (b) b.click(); return !!b;
   })()`);

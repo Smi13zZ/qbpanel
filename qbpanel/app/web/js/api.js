@@ -131,9 +131,32 @@
       return request(BASE + "/backup/delete", { method: "POST", body: { name: name } });
     },
 
-    /* ---- release check ---- */
+    /* ---- release check / one-click update ---- */
     updateCheck: function (force) {
       return request(BASE + "/update/check" + (force ? "?force=1" : ""));
+    },
+    installUpdate: function () {
+      return request(BASE + "/update/install", { method: "POST", body: {} });
+    },
+    updateStatus: function () {
+      return request(BASE + "/update/status");
+    },
+
+    /* ---- notifications ---- */
+    notify: function () {
+      return request(BASE + "/notify");
+    },
+    notifySettings: function (settings) {
+      return request(BASE + "/notify/settings", { method: "POST", body: settings });
+    },
+    saveChannel: function (channel) {
+      return request(BASE + "/notify/channel", { method: "POST", body: channel });
+    },
+    deleteChannel: function (id) {
+      return request(BASE + "/notify/channel/" + encodeURIComponent(id), { method: "DELETE" });
+    },
+    testChannel: function (id) {
+      return request(BASE + "/notify/test", { method: "POST", body: { id: id } });
     },
 
     /* ---- BitTorrent proxy (qBittorrent WebAPI v2 dialect) ---- */

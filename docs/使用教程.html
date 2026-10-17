@@ -160,7 +160,7 @@
       <h1>qBpanel 使用教程</h1>
       <p class="sub">把 qBittorrent / Transmission 装进飞牛 fnOS 的桌面 —— 一个零依赖的 BitTorrent 控制面板，桌面与手机都好用。</p>
       <div class="badges">
-        <span class="badge p">版本 26.10.21</span>
+        <span class="badge p">版本 26.10.22</span>
         <span class="badge">飞牛 fnOS 原生应用（.fpk）</span>
         <span class="badge">x86 + ARM 通用</span>
         <span class="badge">Python 3 标准库 · Vue 3</span>
@@ -216,9 +216,10 @@
         <div class="feat"><span class="dot"></span><div><div class="k">任务详情</div><div class="d">常规信息、文件优先级、Tracker 状态、节点列表四个标签页。</div></div></div>
         <div class="feat"><span class="dot"></span><div><div class="k">多下载器</div><div class="d">多个 qBittorrent / Transmission 实例统一管理，顶栏一键切换。</div></div></div>
         <div class="feat"><span class="dot"></span><div><div class="k">统计与日志</div><div class="d">累计流量、全局分享率、分类占比；下载器日志按级别着色。</div></div></div>
-        <div class="feat"><span class="dot"></span><div><div class="k">面板设置</div><div class="d">分区工作条：面板 / 下载器 / 备份与恢复 / 自动备份 / 更新，一次只看一组。</div></div></div>
+        <div class="feat"><span class="dot"></span><div><div class="k">面板设置</div><div class="d">分区工作条：面板 / 下载器 / 维护 / 通知 / 更新，一次只看一组。</div></div></div>
+        <div class="feat"><span class="dot"></span><div><div class="k">通知提醒</div><div class="d">任务下载完成、发现新版本时推送到 Bark / Server 酱 / PushPlus / WxPusher / Webhook。</div></div></div>
         <div class="feat"><span class="dot"></span><div><div class="k">备份与自动备份</div><div class="d">配置一键导出 / 导入，可定时写入 NAS 应用文件夹，历史备份随时恢复。</div></div></div>
-        <div class="feat"><span class="dot"></span><div><div class="k">版本更新提示</div><div class="d">自动比对 GitHub 上的最新发布，有新版本时侧栏与设置页同时提示。</div></div></div>
+        <div class="feat"><span class="dot"></span><div><div class="k">版本更新</div><div class="d">自动比对 GitHub 上的最新发布，各页面顶部提示，支持一键更新与失败回滚。</div></div></div>
       </div>
 
       <div class="shots-2 shot">
@@ -248,7 +249,7 @@
       <h3>方式二：命令行安装</h3>
       <pre><code># 把 fpk 传到设备上后执行
 printf 'wizard_backend_port=8898\n' &gt; /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.21-fnos-all.fpk</code></pre>
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.22-fnos-all.fpk</code></pre>
       <div class="callout warn">
         <b>两个小坑：</b>命令行安装必须提供环境变量文件（<code class="inl">-e</code>），否则会报
         <code class="inl">Something wrong with environment variables</code>；另外
@@ -359,18 +360,33 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.21-
           <figcaption>备份与恢复：导出 / 导入与历史备份列表（固定五行，更多在卡片内滚动）</figcaption>
         </figure>
       </div>
+      <div class="shots-2 shot">
+        <figure>
+          <img src="images/settings-notify.png" alt="通知设置" loading="lazy">
+          <figcaption>通知：两类提醒事件与多通知渠道，可单独测试发送</figcaption>
+        </figure>
+        <figure>
+          <img src="images/settings-update.png" alt="版本与更新" loading="lazy">
+          <figcaption>更新：当前版本 → 最新版本对比、发布说明与一键更新</figcaption>
+        </figure>
+      </div>
       <table>
         <thead><tr><th>页面</th><th>能做什么</th></tr></thead>
         <tbody>
           <tr><td class="k">服务器</td><td>添加 / 编辑 / 删除下载器，测试连接，设为当前，顶栏快速切换；相同地址自动去重</td></tr>
           <tr><td class="k">统计</td><td>累计上传下载、全局分享率、速度趋势图、状态分布、分类占比、连接信息（端口 / DHT / 版本）</td></tr>
           <tr><td class="k">日志</td><td>查看下载器日志，按级别过滤，开启自动刷新</td></tr>
-          <tr><td class="k">设置</td><td>分区工作条切换五组配置：面板（主题三态 / 中英切换 / 刷新间隔 / 删除二次确认）、下载器（全局限速 kB/s 或 MB/s、默认保存路径、连接信息）、备份与恢复、自动备份、更新</td></tr>
+          <tr><td class="k">设置</td><td>分区工作条切换五组配置：面板（主题三态 / 中英切换 / 刷新间隔 / 删除二次确认）、下载器（全局限速 kB/s 或 MB/s、默认保存路径、连接信息）、维护（备份与恢复 + 自动备份 + 历史备份）、通知（渠道与提醒事件）、更新</td></tr>
         </tbody>
       </table>
+      <h3>通知</h3>
+      <p>「设置 → 通知」里配置提醒：先在「通知渠道」里点「添加渠道」，选择 Bark、Server 酱、PushPlus、WxPusher 或自定义 Webhook，填好对应凭据即可；添加后可以点「测试」立刻验证是否送达。密钥只保存在设备本地，保存后不会回显。</p>
+      <p>提醒事件各有开关：<b>任务下载完成</b>（进度到 100% 时推送一次，同一条任务只发一次）、<b>版本更新</b>（发现新版本推一次，同一版本不重复）。</p>
+
       <h3>版本更新</h3>
-      <p>面板启动后会查询一次项目发布页上的最新版本，并按需手动刷新。「更新」分区会列出当前版本、最新版本、发布仓库、上次检查时间与更新说明；发现新版本时，侧栏的「设置」和该分区的标签上都会出现红点。</p>
-      <p>点「下载安装包」取回对应的 <code class="inl">.fpk</code>，再到飞牛应用中心手动安装即可完成升级 —— 面板不会自行替换正在运行的程序。若设备访问不了 GitHub，这一项会显示失败原因，其他功能不受影响。</p>
+      <p>面板启动后会查询一次项目发布页上的最新版本，并按需手动刷新。发现新版本时，侧栏的「设置」会打一个小红点，并且<b>每个页面顶部都会出现提示条</b>，可以直接点「一键更新」。</p>
+      <p>「更新」分区用「当前版本 → 最新版本」对比展示，下面有状态条、完整更新说明与发布时间。点「一键更新」后面板会下载对应的 <code class="inl">.fpk</code>、调用系统安装器完成安装，页面会等待新版本上线后自动刷新；若新版本启动失败，会自动回滚到上一版本。</p>
+      <p>检查更新走 GitHub 发布页：接口被限流（HTTP 403）时自动改用发布订阅源与资源列表，仍能拿到版本号、更新说明和安装包。若设备完全访问不了 GitHub，这一项会显示失败原因，其他功能不受影响。</p>
     </section>
 
     <section id="backup">
@@ -467,7 +483,7 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.21-
 </div>
 
 <footer class="wrap">
-  qBpanel 26.10.21 · MIT License © 2026 Smi13zZ · 与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
+  qBpanel 26.10.22 · MIT License © 2026 Smi13zZ · 与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
 </footer>
 
 </body>

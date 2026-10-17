@@ -36,6 +36,11 @@
     pause: svg('<path d="M9 5v14M15 5v14"/>', 15),
     trash: svg('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>', 15),
     close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    spark: svg('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>', 20),
+    bell: svg('<path d="M6 8a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>', 18),
+    send: svg('<path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>', 16),
+    pencil: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', 16),
+    arrowRight: svg('<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>', 20),
     sortAsc: svg('<path d="M12 19V5"/><path d="M6 11l6-6 6 6"/>', 16),
     sortDesc: svg('<path d="M12 5v14"/><path d="M6 13l6 6 6-6"/>', 16),
     download: svg('<path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>', 16),
@@ -148,6 +153,19 @@
         updateInfo: null,
         updateError: "",
         updateChecking: false,
+        updateBanner: true,
+        updateInstalling: false,
+        updateInstallVersion: "",
+        updateInstallDetail: "",
+        installTimer: null,
+
+        /* notifications */
+        notifyCfg: { enabled: false, on_complete: true, on_update: true },
+        notifyChannels: [],
+        notifyTypes: ["bark", "serverchan", "pushplus", "wxpusher", "webhook"],
+        channelForm: null,
+        savingChannel: false,
+        testingChannel: "",
 
         logs: [],
         logLevel: "normal",
@@ -186,8 +204,8 @@
         const t = this.t;
         const out = [
           { id: "panel", label: t("settings.tab.panel") },
-          { id: "backup", label: t("settings.tab.backup") },
-          { id: "auto", label: t("settings.tab.auto") },
+          { id: "maintenance", label: t("settings.tab.maintenance") },
+          { id: "notify", label: t("settings.tab.notify") },
           { id: "update", label: t("settings.tab.update") },
         ];
         if (this.servers.length) out.splice(1, 0, { id: "downloader", label: t("settings.tab.downloader") });
@@ -196,8 +214,20 @@
       updateNew: function () {
         return !!(this.updateInfo && this.updateInfo.has_update);
       },
+      /* Release notes arrive as Markdown. The card shows plain text, so strip
+         the syntax that would otherwise read as noise (##, **, backticks). */
       updateNotes: function () {
-        return (this.updateInfo && this.updateInfo.notes) || "";
+        const raw = (this.updateInfo && this.updateInfo.notes) || "";
+        return raw
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+          .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+          .replace(/\*\*([^*]+)\*\*/g, "$1")
+          .replace(/__([^_]+)__/g, "$1")
+          .replace(/`([^`]+)`/g, "$1")
+          .replace(/^\s*[-*]\s+/gm, "· ")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
       },
       themeMode: function () {
         return this.themeOverride || this.settings.theme_mode || "dark";
@@ -298,7 +328,13 @@
     watch: {
       logAuto: function (v) { if (v) this.loadLogs(); },
       filter: function () { this.selection = []; },
-      settingsTab: function (v) { if (v === "update" && !this.updateInfo) this.checkUpdate(false); },
+      settingsTab: function (v) {
+        if (v === "update" && !this.updateInfo) this.checkUpdate(false);
+        if (v === "notify" && !this.notifyChannels.length) this.loadNotify();
+      },
+      "channelForm.type": function (type) {
+        if (type) this.ensureChannelFields(type);
+      },
     },
 
     mounted: function () {
@@ -600,7 +636,10 @@ serverName: function () {
         this.view = id;
         this.navOpen = false;
         if (id === "logs") this.loadLogs();
-        if (id === "settings") this.loadBackupStatus();
+        if (id === "settings") {
+          this.loadBackupStatus();
+          this.loadNotify();
+        }
         if (id === "servers") this.testAllServers();
         if (id === "stats" || id === "dash") this.$nextTick(this.drawCharts);
       },
@@ -1257,6 +1296,194 @@ serverName: function () {
           this.updateError = this.t("update.failed", { v: e.message });
         } finally {
           this.updateChecking = false;
+        }
+      },
+
+      /* ---------------- one-click update ---------------- */
+      openUpdateSection: function () {
+        this.settingsTab = "update";
+        this.go("settings");
+      },
+      dismissUpdateBanner: function () {
+        this.updateBanner = false;
+      },
+      installUpdate: function () {
+        if (this.updateInstalling) return;
+        if (!this.updateInfo || !this.updateInfo.has_update) {
+          this.toast(this.t("update.upTitle"));
+          return;
+        }
+        const self = this;
+        this.confirmBox = {
+          title: this.t("update.oneClick"),
+          text: this.t("update.confirm", { v: this.updateInfo.latest }),
+          okText: this.t("update.oneClick"),
+          onOk: async function () {
+            self.confirmBox = null;
+            await self.runInstall();
+          },
+        };
+      },
+      runInstall: async function () {
+        this.updateInstalling = true;
+        this.updateInstallVersion = this.updateInfo ? this.updateInfo.latest : "";
+        this.updateInstallDetail = this.t("update.downloading");
+        this.updateError = "";
+        try {
+          const r = await API.installUpdate();
+          if (!r || !r.ok) throw new Error((r && r.error) || "install failed");
+          this.updateInstallDetail = this.t("update.restarting");
+          this.pollAfterInstall();
+        } catch (e) {
+          this.updateInstalling = false;
+          this.updateError = this.t("update.installFailed", { v: e.message });
+        }
+      },
+      /* The installer stops this very service, so the page keeps polling the
+         health endpoint until a different version answers, then reloads. */
+      pollAfterInstall: function () {
+        const self = this;
+        const oldVersion = this.appVersion;
+        let tries = 0;
+        clearInterval(this.installTimer);
+        this.installTimer = setInterval(async function () {
+          tries += 1;
+          try {
+            const h = await API.health();
+            if (h && h.version && h.version !== oldVersion) {
+              clearInterval(self.installTimer);
+              self.updateInstallDetail = self.t("update.done", { v: h.version });
+              setTimeout(function () { location.reload(); }, 900);
+              return;
+            }
+          } catch (e) {
+            /* expected: the panel is down while appcenter reinstalls it */
+          }
+          if (tries === 15) self.updateInstallDetail = self.t("update.installingHint");
+          if (tries > 100) {
+            clearInterval(self.installTimer);
+            self.updateInstalling = false;
+            self.updateError = self.t("update.installTimeout");
+          }
+        }, 2000);
+      },
+
+      /* ---------------- notifications ---------------- */
+      loadNotify: async function () {
+        try {
+          const r = await API.notify();
+          if (r.settings) this.notifyCfg = r.settings;
+          this.notifyChannels = r.channels || [];
+          if (r.types && r.types.length) this.notifyTypes = r.types;
+        } catch (e) {
+          /* the section simply stays empty; nothing else depends on it */
+        }
+      },
+      notifyTypeLabel: function (type) {
+        const key = "notify.type." + type;
+        const label = this.t(key);
+        return label === key ? type : label;
+      },
+      secretHint: function (isSet) {
+        return isSet ? this.t("notify.f.secretSaved") : "";
+      },
+      saveNotifyFlag: async function (key, val) {
+        const next = Object.assign({}, this.notifyCfg);
+        next[key] = val;
+        this.notifyCfg = next;
+        try {
+          const r = await API.notifySettings(next);
+          if (r.settings) this.notifyCfg = r.settings;
+        } catch (e) {
+          this.toast(e.message, "err");
+        }
+      },
+      openChannelForm: function (ch) {
+        const type = ch ? ch.type : (this.notifyTypes[0] || "bark");
+        const cfg = {};
+        ["server", "key", "sendkey", "token", "app_token", "uids", "topics", "url", "headers"].forEach(function (k) {
+          cfg[k] = ch && ch.config && ch.config[k] ? ch.config[k] : "";
+        });
+        const secretSet = {};
+        ((ch && ch.secrets) || []).forEach(function (k) {
+          secretSet[k] = !!(ch.config && ch.config[k]);
+        });
+        this.channelForm = {
+          id: ch ? ch.id : "",
+          name: ch ? ch.name : "",
+          type: type,
+          enabled: ch ? ch.enabled : true,
+          config: cfg,
+          secretSet: secretSet,
+        };
+        this.ensureChannelFields(type);
+      },
+      ensureChannelFields: function (type) {
+        if (!this.channelForm) return;
+        const map = {
+          bark: ["server", "key"],
+          serverchan: ["sendkey"],
+          pushplus: ["token"],
+          wxpusher: ["app_token", "uids", "topics"],
+          webhook: ["url", "headers"],
+        };
+        const cfg = this.channelForm.config;
+        (map[type] || []).forEach(function (k) {
+          if (cfg[k] === undefined || cfg[k] === null) cfg[k] = "";
+        });
+      },
+      saveChannel: async function () {
+        if (this.savingChannel || !this.channelForm) return;
+        this.savingChannel = true;
+        const f = this.channelForm;
+        try {
+          await API.saveChannel({
+            id: f.id,
+            name: f.name,
+            type: f.type,
+            enabled: f.enabled,
+            config: f.config,
+          });
+          this.channelForm = null;
+          await this.loadNotify();
+          this.toast(this.t("notify.saved"));
+        } catch (e) {
+          this.toast(e.message, "err");
+        } finally {
+          this.savingChannel = false;
+        }
+      },
+      removeChannel: function (ch) {
+        const self = this;
+        this.confirmBox = {
+          title: this.t("notify.removeTitle"),
+          text: this.t("notify.removeConfirm", { name: ch.name }),
+          okText: this.t("notify.remove"),
+          onOk: async function () {
+            self.confirmBox = null;
+            try {
+              await API.deleteChannel(ch.id);
+              await self.loadNotify();
+              self.toast(self.t("notify.removed"));
+            } catch (e) {
+              self.toast(e.message, "err");
+            }
+          },
+        };
+      },
+      testChannel: async function (ch) {
+        this.testingChannel = ch.id;
+        try {
+          const r = await API.testChannel(ch.id);
+          if (r && r.ok) {
+            this.toast(this.t("notify.testOk", { name: ch.name }));
+          } else {
+            this.toast(this.t("notify.testFail", { v: (r && r.result && r.result.detail) || "" }), "err");
+          }
+        } catch (e) {
+          this.toast(e.message, "err");
+        } finally {
+          this.testingChannel = "";
         }
       },
 

@@ -40,9 +40,10 @@ Two backends are supported: **qBittorrent (WebAPI v2, 4.x and 5.x)** and **Trans
 | **Servers** | Manage several qBittorrent / Transmission instances; test before saving; switch from the top bar; duplicate addresses rejected |
 | **Stats** | All-time upload / download, global ratio, speed trend, status distribution, category share, connection info |
 | **Logs** | Downloader log with level colours (normal / info / warning / critical) and auto refresh |
-| **Settings** | Sectioned work bar (panel / downloader / backup & restore / auto backup / update); tri-state theme, EN / 中文, refresh interval, global speed limits, default save path |
+| **Settings** | Sectioned work bar (panel / downloader / maintenance / notifications / update); tri-state theme, EN / 中文, refresh interval, global speed limits, default save path |
 | **Backups** | Export / import JSON config, scheduled auto-backup into the fnOS app folder; the list shows five rows and scrolls, with restore or delete per entry |
-| **Updates** | Reads the latest published release from GitHub and compares it with the installed build; a newer release is flagged in the sidebar and the package can be downloaded right away |
+| **Notifications** | Five channel types — Bark, ServerChan, PushPlus, WxPusher and custom webhooks; events for finished torrents and new releases; per-channel test send, secrets stay on the device |
+| **Updates** | Reads the latest published release from GitHub and compares it with the installed build; a banner appears on every page and the sidebar flags it. **One-click update** downloads the package, runs the system installer and rolls back automatically if the new build fails to start |
 | **Mobile** | Drawer sidebar, bottom-sheet pickers, card layout — tuned inside the fnOS phone app's embedded browser |
 | **Deep links** | `?view=`, `?theme=`, `?lang=` and `?hash=` parameters |
 
@@ -101,7 +102,7 @@ Mobile (390px):
 
 ```bash
 printf 'wizard_backend_port=8898\n' > /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.21-fnos-all.fpk
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.22-fnos-all.fpk
 ```
 
 > Two gotchas: the `-e` env file is **mandatory**, otherwise you get
@@ -168,11 +169,15 @@ Every downloader instance as a card with name, type, address, status and version
 
 Stats collects all-time traffic, global ratio, speed trend, status distribution, category share and connection info (listening port, DHT nodes, connection status, downloader version). Logs shows the downloader log with level colours and optional auto refresh.
 
-Settings opens with a sectioned work bar so one group of options is on screen at a time: **Panel** (theme, refresh interval, delete confirmation), **Downloader** (global limits, default save path, read-only connection info), **Backup & restore**, **Auto backup**, and **Update**.
+Settings opens with a sectioned work bar so one group of options is on screen at a time: **Panel** (theme, refresh interval, delete confirmation), **Downloader** (global limits, default save path, read-only connection info), **Maintenance** (backup & restore plus automatic backup), **Notifications**, and **Update**.
 
-### 6. Updates
+### 6. Notifications
 
-The panel queries the project's release feed once shortly after start-up. When a newer build exists, a dot appears next to *Settings* in the sidebar and on the Update section, which lists the installed and latest versions, the repository, the last check and the release notes. **Download package** fetches the matching `.fpk`; install it from the fnOS app store to upgrade — the panel never replaces its own running files. If GitHub is unreachable the section reports why and everything else keeps working.
+Configured under Settings → Notifications. Channels: **Bark** (server + device key), **ServerChan** (SendKey), **PushPlus** (token), **WxPusher** (appToken, optional UID / topic), and a **custom webhook** (URL plus optional `Key: Value` headers). Two event switches: *torrent finished* (sent once per torrent) and *new version* (once per release). Each channel has a **Test** button; secrets are stored locally and never echoed back.
+
+### 7. Updates
+
+The panel queries the project's release feed once shortly after start-up. When a newer build exists, a dot appears next to *Settings* in the sidebar and a banner shows on every page (dismissable for the session). The Update section compares installed and latest version side by side and shows the release notes. **Update now** downloads the `.fpk`, runs the system installer and waits for the new build to answer; if it fails to start, the previous package is reinstalled automatically. If GitHub rate-limits the API (403), the panel falls back to the releases Atom feed and the asset list, so version, notes and package are still available.
 
 ---
 
