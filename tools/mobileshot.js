@@ -320,6 +320,15 @@ function summary(label, ok, detail) {
   await c.send("Page.navigate", { url: BASE + "/?view=settings" });
   await waitFor("!!document.querySelector('.card')", 12000);
   await sleep(1200);
+  // 26.10.21: settings is a sectioned work bar - the export controls live in
+  // the "backup & restore" section now, so open it first.
+  await c.eval(`(function(){
+    var b = Array.prototype.slice.call(document.querySelectorAll('.workbar button')).find(function(x){
+      return /备份|Backup/.test(x.textContent);
+    });
+    if (b) b.click(); return !!b;
+  })()`);
+  await sleep(800);
   // Find and click 导出备份
   const exportClicked = await c.eval(`(function(){
     var b = Array.prototype.slice.call(document.querySelectorAll('button')).find(function(x){

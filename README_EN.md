@@ -40,8 +40,9 @@ Two backends are supported: **qBittorrent (WebAPI v2, 4.x and 5.x)** and **Trans
 | **Servers** | Manage several qBittorrent / Transmission instances; test before saving; switch from the top bar; duplicate addresses rejected |
 | **Stats** | All-time upload / download, global ratio, speed trend, status distribution, category share, connection info |
 | **Logs** | Downloader log with level colours (normal / info / warning / critical) and auto refresh |
-| **Settings** | Tri-state theme, EN / 中文, refresh interval, global speed limits, default save path |
-| **Backups** | Export / import JSON config, scheduled auto-backup into the fnOS app folder, restore or delete any earlier backup |
+| **Settings** | Sectioned work bar (panel / downloader / backup & restore / auto backup / update); tri-state theme, EN / 中文, refresh interval, global speed limits, default save path |
+| **Backups** | Export / import JSON config, scheduled auto-backup into the fnOS app folder; the list shows five rows and scrolls, with restore or delete per entry |
+| **Updates** | Reads the latest published release from GitHub and compares it with the installed build; a newer release is flagged in the sidebar and the package can be downloaded right away |
 | **Mobile** | Drawer sidebar, bottom-sheet pickers, card layout — tuned inside the fnOS phone app's embedded browser |
 | **Deep links** | `?view=`, `?theme=`, `?lang=` and `?hash=` parameters |
 
@@ -100,7 +101,7 @@ Mobile (390px):
 
 ```bash
 printf 'wizard_backend_port=8898\n' > /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.20-fnos-all.fpk
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.21-fnos-all.fpk
 ```
 
 > Two gotchas: the `-e` env file is **mandatory**, otherwise you get
@@ -165,7 +166,13 @@ Every downloader instance as a card with name, type, address, status and version
 
 ### 5. Stats / Logs / Settings
 
-Stats collects all-time traffic, global ratio, speed trend, status distribution, category share and connection info (listening port, DHT nodes, connection status, downloader version). Logs shows the downloader log with level colours and optional auto refresh. Settings covers theme, refresh interval, global limits and the default save path.
+Stats collects all-time traffic, global ratio, speed trend, status distribution, category share and connection info (listening port, DHT nodes, connection status, downloader version). Logs shows the downloader log with level colours and optional auto refresh.
+
+Settings opens with a sectioned work bar so one group of options is on screen at a time: **Panel** (theme, refresh interval, delete confirmation), **Downloader** (global limits, default save path, read-only connection info), **Backup & restore**, **Auto backup**, and **Update**.
+
+### 6. Updates
+
+The panel queries the project's release feed once shortly after start-up. When a newer build exists, a dot appears next to *Settings* in the sidebar and on the Update section, which lists the installed and latest versions, the repository, the last check and the release notes. **Download package** fetches the matching `.fpk`; install it from the fnOS app store to upgrade — the panel never replaces its own running files. If GitHub is unreachable the section reports why and everything else keeps working.
 
 ---
 
@@ -179,7 +186,7 @@ The whole panel configuration — server list, credentials, all settings — can
 | **Export to app folder** | Writes straight into `/vol1/@appshare/fn-qbpanel/backups/`, reachable from the file manager |
 | **Import backup** | Choose a backup file to overwrite the current config (the page reloads afterwards) |
 | **Auto backup** | Interval 1–8760 hours, retention 1–3650 days; the first copy is written immediately |
-| **Earlier backups** | Listed with date and size; restore or delete with one click |
+| **Earlier backups** | Five rows are shown, the rest scrolls inside the card with a sticky header; restore or delete per entry. On a phone the shared filename prefix is dropped so the timestamp fits |
 
 > Forgot the downloader password? It is in the backup file in clear text — copy it out of the app folder and open it.
 

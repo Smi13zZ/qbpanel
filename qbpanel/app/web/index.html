@@ -23,6 +23,9 @@
         <span class="ic" v-html="ic(n.icon)"></span>
         <span class="label">{{ t(n.key) }}</span>
         <span class="badge" v-if="n.id === 'torrents' && torrentCount">{{ torrentCount }}</span>
+        <!-- new release available: a corner marker rather than a count badge,
+             so it stays visible when the sidebar is collapsed -->
+        <i class="nav-dot" v-if="n.id === 'settings' && updateNew" :title="t('update.available', { v: updateInfo.latest })"></i>
       </button>
     </nav>
 
@@ -166,29 +169,33 @@
 
       <!-- ================= TORRENTS ================= -->
       <template v-if="view === 'torrents' && servers.length">
-        <div class="toolbar">
-          <input class="input" style="width:240px" v-model="search" :placeholder="t('torrents.search')">
-          <div class="seg">
+        <div class="toolbar tbar-torrents">
+          <input class="input tsearch" v-model="search" :placeholder="t('torrents.search')">
+          <div class="seg tseg">
             <button v-for="f in filters" :key="f" :class="{ on: filter === f }" @click="filter = f">
               {{ t('torrents.filter.' + f) }}
             </button>
           </div>
-          <select v-if="!isMobile" class="select" v-model="sortKey" style="width:150px">
-            <option v-for="k in sortKeys" :key="k" :value="k">{{ t('torrents.sort.' + k) }}</option>
-          </select>
-          <button v-else type="button" class="select picker-trigger" style="width:auto;min-width:120px;flex:0 1 auto"
-                  @click="openPicker({
-                    title: t('torrents.sortTitle'),
-                    value: sortKey,
-                    options: sortKeys.map(function (k) { return { value: k, label: t('torrents.sort.' + k) }; }),
-                    onPick: (v) => { sortKey = v; }
-                  })"><span class="v">{{ sortLabel() }}</span></button>
-          <button class="icon-btn" @click="sortAsc = !sortAsc"
-                  :title="sortAsc ? t('torrents.sortAsc') : t('torrents.sortDesc')">
-            <span v-html="ic(sortAsc ? 'sortAsc' : 'sortDesc')"></span>
-          </button>
+          <!-- sort key + direction live in one group: on a phone the dropdown
+               shrinks and the toggle stays glued to its right edge -->
+          <div class="tsort">
+            <select v-if="!isMobile" class="select" v-model="sortKey" style="width:150px">
+              <option v-for="k in sortKeys" :key="k" :value="k">{{ t('torrents.sort.' + k) }}</option>
+            </select>
+            <button v-else type="button" class="select picker-trigger tsort-pick"
+                    @click="openPicker({
+                      title: t('torrents.sortTitle'),
+                      value: sortKey,
+                      options: sortKeys.map(function (k) { return { value: k, label: t('torrents.sort.' + k) }; }),
+                      onPick: (v) => { sortKey = v; }
+                    })"><span class="v">{{ sortLabel() }}</span></button>
+            <button class="icon-btn tsort-dir" @click="sortAsc = !sortAsc"
+                    :title="sortAsc ? t('torrents.sortAsc') : t('torrents.sortDesc')">
+              <span v-html="ic(sortAsc ? 'sortAsc' : 'sortDesc')"></span>
+            </button>
+          </div>
           <div class="spacer"></div>
-          <button class="btn primary" @click="openAdd">
+          <button class="btn primary tadd" @click="openAdd">
             <span class="ic" v-html="ic('plus')"></span>{{ t('torrents.add') }}
           </button>
         </div>
@@ -445,7 +452,16 @@
 
       <!-- ================= SETTINGS ================= -->
       <template v-if="view === 'settings'">
-        <div class="card">
+        <!-- sectioned work bar: one group of cards at a time -->
+        <div class="workbar">
+          <button v-for="st in settingsTabs" :key="st.id" type="button"
+                  :class="{ on: settingsTab === st.id }" @click="settingsTab = st.id">
+            <span>{{ st.label }}</span>
+            <i class="workbar-dot" v-if="st.id === 'update' && updateNew"></i>
+          </button>
+        </div>
+
+        <div class="card" v-if="settingsTab === 'panel'">
           <h3>{{ t('settings.panel') }}</h3>
           <div class="form-grid">
             <div class="field">
@@ -500,7 +516,7 @@
           </div>
         </div>
 
-        <div class="card" v-if="servers.length">
+        <div class="card" v-if="settingsTab === 'downloader' && servers.length">
           <h3>{{ t('settings.downloader') }}</h3>
           <div class="form-grid">
             <div class="field">
@@ -566,7 +582,7 @@
         </div>
 
         <!-- ---------- maintenance: export / import ---------- -->
-        <div class="card">
+        <div class="card" v-if="settingsTab === 'backup'">
           <h3>{{ t('settings.maintenance') }}</h3>
           <p class="dim" style="margin:0 0 14px">{{ t('backup.desc') }}</p>
           <div class="row wrap" style="gap:8px">
@@ -598,7 +614,7 @@
         </div>
 
         <!-- ---------- automatic backup ---------- -->
-        <div class="card">
+        <div class="card" v-if="settingsTab === 'auto'">
           <h3>{{ t('auto.title') }}</h3>
           <p class="dim" style="margin:0 0 14px">{{ t('auto.desc') }}</p>
           <div class="form-grid">
@@ -637,35 +653,95 @@
         </div>
 
         <!-- ---------- backup list ---------- -->
-        <div class="card">
+        <div class="card" v-if="settingsTab === 'backup'">
           <div class="card-head">
             <h3>{{ t('backup.listTitle') }}</h3>
             <div class="spacer"></div>
             <span class="chip">{{ (autoStatus.backups || []).length }}</span>
           </div>
           <div v-if="!(autoStatus.backups || []).length" class="faint">{{ t('backup.empty') }}</div>
-<!-- tbackup: table-layout:fixed so the mono filename ellipsises instead of
-             widening the page (a 37-char backup name pushed the whole
-             document ~140px past a 360px phone viewport). -->
-          <table class="ttable tbackup" v-else>
-            <thead>
-              <tr>
-                <th>{{ t('backup.createdAt') }}</th>
-                <th class="num" style="width:96px">{{ t('table.size') }}</th>
-                <th class="acts" style="width:158px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="b in autoStatus.backups" :key="b.name">
-                <td class="mono ellipsis" :title="b.name">{{ b.name }}</td>
-                <td class="num mono">{{ fmt.fmtBytes(b.size) }}</td>
-                <td class="acts">
-                  <button class="btn sm" @click="askRestore(b)">{{ t('backup.restore') }}</button>
-                  <button class="btn sm danger" @click="askDeleteBackup(b)">{{ t('backup.delete') }}</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+<!-- bscroll pins the list at five rows: with dozens of automatic backups the
+     card used to grow without limit and push the page several screens down.
+     .tbackup keeps table-layout:fixed so the mono filename ellipsises instead
+     of widening the page on a phone. -->
+          <div class="bscroll" v-else>
+            <table class="ttable tbackup">
+              <thead>
+                <tr>
+                  <th>{{ t('backup.createdAt') }}</th>
+                  <th class="num" style="width:96px">{{ t('table.size') }}</th>
+                  <th class="acts" style="width:158px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="b in autoStatus.backups" :key="b.name">
+                  <td class="bcname">
+                    <div class="mono ellipsis bname" :title="b.name">
+                      <span class="bname-full">{{ b.name }}</span>
+                      <span class="bname-short">{{ backupLabel(b.name) }}</span>
+                    </div>
+                    <!-- phones drop the size column to give the filename room;
+                         the value moves under the name instead -->
+                    <div class="bmeta mono faint">{{ fmt.fmtBytes(b.size) }}</div>
+                  </td>
+                  <td class="num mono">{{ fmt.fmtBytes(b.size) }}</td>
+                  <td class="acts">
+                    <button class="btn sm" @click="askRestore(b)">{{ t('backup.restore') }}</button>
+                    <button class="btn sm danger" @click="askDeleteBackup(b)">{{ t('backup.delete') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="hint" style="margin-top:10px"
+               v-if="(autoStatus.backups || []).length > backupsVisible">
+            {{ t('backup.scrollHint', { n: (autoStatus.backups || []).length }) }}
+          </div>
+        </div>
+
+        <!-- ---------- release check ---------- -->
+        <div class="card" v-if="settingsTab === 'update'">
+          <div class="card-head">
+            <h3>{{ t('update.title') }}</h3>
+            <div class="spacer"></div>
+            <span class="chip" v-if="updateNew">
+              <i class="dot" style="background:var(--dl)"></i>{{ t('update.available', { v: updateInfo.latest }) }}
+            </span>
+            <span class="chip" v-else-if="updateInfo && updateInfo.ok">
+              <i class="dot on"></i>{{ t('update.upToDate') }}
+            </span>
+          </div>
+          <p class="dim" style="margin:0 0 14px">{{ t('update.desc') }}</p>
+          <dl class="kv">
+            <dt>{{ t('update.current') }}</dt><dd class="mono">v{{ appVersion }}</dd>
+            <dt>{{ t('update.latest') }}</dt>
+            <dd class="mono">{{ updateInfo && updateInfo.latest ? 'v' + updateInfo.latest : '—' }}</dd>
+            <dt>{{ t('update.repo') }}</dt><dd class="mono">{{ updateRepoLabel() }}</dd>
+            <dt>{{ t('update.checkedAt') }}</dt>
+            <dd>{{ updateInfo && updateInfo.checked_at ? fmt.fmtDate(updateInfo.checked_at) : t('update.neverChecked') }}</dd>
+          </dl>
+          <div class="hint" style="color:var(--danger);margin-top:10px" v-if="updateError">{{ updateError }}</div>
+          <div class="sep"></div>
+          <div class="row wrap" style="gap:8px">
+            <button class="btn" type="button" :disabled="updateChecking" @click="checkUpdate(true)">
+              <span class="ic" v-html="ic('refresh')"></span>
+              {{ updateChecking ? t('update.checking') : t('update.check') }}
+            </button>
+            <a class="btn primary" v-if="updateAssetUrl()" :href="updateAssetUrl()"
+               target="_blank" rel="noopener noreferrer">
+              <span class="ic" v-html="ic('download')"></span>{{ t('update.download') }}
+            </a>
+            <a class="btn" v-if="updateReleaseUrl()" :href="updateReleaseUrl()"
+               target="_blank" rel="noopener noreferrer">{{ t('update.release') }}</a>
+          </div>
+          <template v-if="updateInfo && updateInfo.published_at">
+            <div class="hint" style="margin-top:9px">{{ t('update.publishedAt', { v: updateInfo.published_at.slice(0, 10) }) }}</div>
+          </template>
+          <div class="sep"></div>
+          <h3>{{ t('update.notes') }}</h3>
+          <div class="relnotes" v-if="updateNotes">{{ updateNotes }}</div>
+          <div class="faint" v-else>{{ t('update.noNotes') }}</div>
+          <div class="hint" style="margin-top:12px">{{ t('update.hint') }}</div>
         </div>
       </template>
 

@@ -160,7 +160,7 @@
       <h1>qBpanel 使用教程</h1>
       <p class="sub">把 qBittorrent / Transmission 装进飞牛 fnOS 的桌面 —— 一个零依赖的 BitTorrent 控制面板，桌面与手机都好用。</p>
       <div class="badges">
-        <span class="badge p">版本 26.10.20</span>
+        <span class="badge p">版本 26.10.21</span>
         <span class="badge">飞牛 fnOS 原生应用（.fpk）</span>
         <span class="badge">x86 + ARM 通用</span>
         <span class="badge">Python 3 标准库 · Vue 3</span>
@@ -216,8 +216,9 @@
         <div class="feat"><span class="dot"></span><div><div class="k">任务详情</div><div class="d">常规信息、文件优先级、Tracker 状态、节点列表四个标签页。</div></div></div>
         <div class="feat"><span class="dot"></span><div><div class="k">多下载器</div><div class="d">多个 qBittorrent / Transmission 实例统一管理，顶栏一键切换。</div></div></div>
         <div class="feat"><span class="dot"></span><div><div class="k">统计与日志</div><div class="d">累计流量、全局分享率、分类占比；下载器日志按级别着色。</div></div></div>
-        <div class="feat"><span class="dot"></span><div><div class="k">面板设置</div><div class="d">三态主题、中英双语、刷新间隔、全局限速、默认保存路径。</div></div></div>
+        <div class="feat"><span class="dot"></span><div><div class="k">面板设置</div><div class="d">分区工作条：面板 / 下载器 / 备份与恢复 / 自动备份 / 更新，一次只看一组。</div></div></div>
         <div class="feat"><span class="dot"></span><div><div class="k">备份与自动备份</div><div class="d">配置一键导出 / 导入，可定时写入 NAS 应用文件夹，历史备份随时恢复。</div></div></div>
+        <div class="feat"><span class="dot"></span><div><div class="k">版本更新提示</div><div class="d">自动比对 GitHub 上的最新发布，有新版本时侧栏与设置页同时提示。</div></div></div>
       </div>
 
       <div class="shots-2 shot">
@@ -247,7 +248,7 @@
       <h3>方式二：命令行安装</h3>
       <pre><code># 把 fpk 传到设备上后执行
 printf 'wizard_backend_port=8898\n' &gt; /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.20-fnos-all.fpk</code></pre>
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.21-fnos-all.fpk</code></pre>
       <div class="callout warn">
         <b>两个小坑：</b>命令行安装必须提供环境变量文件（<code class="inl">-e</code>），否则会报
         <code class="inl">Something wrong with environment variables</code>；另外
@@ -351,11 +352,11 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.20-
       <div class="shots-2 shot">
         <figure>
           <img src="images/settings.png" alt="设置页面" loading="lazy">
-          <figcaption>设置：主题、刷新间隔、全局限速与默认保存路径</figcaption>
+          <figcaption>设置：顶部分区工作条，主题、刷新间隔等集中在「面板」分区</figcaption>
         </figure>
         <figure>
           <img src="images/settings-backup.png" alt="备份管理" loading="lazy">
-          <figcaption>维护：自动备份设置与历史备份列表，可一键恢复或删除</figcaption>
+          <figcaption>备份与恢复：导出 / 导入与历史备份列表（固定五行，更多在卡片内滚动）</figcaption>
         </figure>
       </div>
       <table>
@@ -364,9 +365,12 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.20-
           <tr><td class="k">服务器</td><td>添加 / 编辑 / 删除下载器，测试连接，设为当前，顶栏快速切换；相同地址自动去重</td></tr>
           <tr><td class="k">统计</td><td>累计上传下载、全局分享率、速度趋势图、状态分布、分类占比、连接信息（端口 / DHT / 版本）</td></tr>
           <tr><td class="k">日志</td><td>查看下载器日志，按级别过滤，开启自动刷新</td></tr>
-          <tr><td class="k">设置</td><td>主题三态、中英切换、刷新间隔、删除二次确认、全局限速（kB/s 或 MB/s）、默认保存路径、连接信息</td></tr>
+          <tr><td class="k">设置</td><td>分区工作条切换五组配置：面板（主题三态 / 中英切换 / 刷新间隔 / 删除二次确认）、下载器（全局限速 kB/s 或 MB/s、默认保存路径、连接信息）、备份与恢复、自动备份、更新</td></tr>
         </tbody>
       </table>
+      <h3>版本更新</h3>
+      <p>面板启动后会查询一次项目发布页上的最新版本，并按需手动刷新。「更新」分区会列出当前版本、最新版本、发布仓库、上次检查时间与更新说明；发现新版本时，侧栏的「设置」和该分区的标签上都会出现红点。</p>
+      <p>点「下载安装包」取回对应的 <code class="inl">.fpk</code>，再到飞牛应用中心手动安装即可完成升级 —— 面板不会自行替换正在运行的程序。若设备访问不了 GitHub，这一项会显示失败原因，其他功能不受影响。</p>
     </section>
 
     <section id="backup">
@@ -379,7 +383,7 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.20-
           <tr><td class="k">导出到应用文件夹</td><td>直接写入 NAS 的 <code class="inl">/vol1/@appshare/fn-qbpanel/backups/</code>，从文件管理器即可取走</td></tr>
           <tr><td class="k">导入备份</td><td>选择备份文件覆盖当前配置，导入后自动刷新</td></tr>
           <tr><td class="k">自动备份</td><td>间隔 1–8760 小时、保留 1–3650 天，开启瞬间先生成第一份</td></tr>
-          <tr><td class="k">历史备份</td><td>列表显示时间与大小，可恢复或删除</td></tr>
+          <tr><td class="k">历史备份</td><td>固定显示五行，更多时在卡片内上下滚动（表头固定）；每行可恢复或删除，手机端省掉共用的文件名前缀只留时间戳</td></tr>
         </tbody>
       </table>
       <div class="callout">忘了面板里的下载器密码？备份文件里就有明文凭据，从应用文件夹拷出来打开即可。</div>
@@ -463,7 +467,7 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.20-
 </div>
 
 <footer class="wrap">
-  qBpanel 26.10.20 · MIT License © 2026 Smi13zZ · 与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
+  qBpanel 26.10.21 · MIT License © 2026 Smi13zZ · 与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
 </footer>
 
 </body>

@@ -12,10 +12,13 @@ import mimetypes
 import os
 import re
 import socket
+import ssl
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -225,6 +228,115 @@ def backup_thread():
         except Exception as exc:
             log("auto backup loop error: %r" % (exc,))
         time.sleep(300)
+
+
+# --------------------------------------------------------------------------
+# release check
+#
+# Queries the project's public release feed and compares the tag against the
+# running VERSION. The panel never replaces its own files: installing a newer
+# package is an explicit action in the system's app store, so this endpoint
+# only reports what is available.
+# --------------------------------------------------------------------------
+RELEASE_API = "https://api.github.com"
+RELEASE_REPO = "Smi13zZ/qbpanel"
+RELEASE_TTL = 900
+RELEASE_CACHE = {"at": 0.0, "payload": None}
+RELEASE_LOCK = threading.Lock()
+
+
+def version_tuple(value):
+    """'v26.10.21' -> (26, 10, 21, 0) so plain tuple comparison orders builds."""
+    nums = [int(p) for p in re.findall(r"\d+", str(value or ""))[:4]]
+    while len(nums) < 4:
+        nums.append(0)
+    return tuple(nums)
+
+
+def release_settings():
+    st = (STORE.data.get("settings") or {}) if STORE else {}
+    repo = str(st.get("update_repo") or RELEASE_REPO).strip().strip("/") or RELEASE_REPO
+    base = str(st.get("update_api_base") or RELEASE_API).strip().rstrip("/") or RELEASE_API
+    return repo, base
+
+
+def describe_error(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        return "HTTP %d" % exc.code
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, "reason", None) or exc
+        if isinstance(reason, socket.timeout):
+            return "timeout"
+        return str(reason)
+    if isinstance(exc, socket.timeout):
+        return "timeout"
+    return str(exc) or exc.__class__.__name__
+
+
+def fetch_release(repo, base, timeout=8):
+    url = "%s/repos/%s/releases/latest" % (base, repo)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "qBpanel/" + VERSION,
+        "Accept": "application/vnd.github+json",
+    })
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def check_update(force=False):
+    repo, base = release_settings()
+    now = time.time()
+    with RELEASE_LOCK:
+        cached = RELEASE_CACHE["payload"]
+        if not force and cached and now - RELEASE_CACHE["at"] < RELEASE_TTL:
+            out = dict(cached)
+            out["cached"] = True
+            return out
+    out = {
+        "ok": True,
+        "current": VERSION,
+        "latest": "",
+        "has_update": False,
+        "name": "",
+        "notes": "",
+        "published_at": "",
+        "html_url": "",
+        "repo": repo,
+        "assets": [],
+        "checked_at": int(now),
+        "cached": False,
+        "error": "",
+    }
+    try:
+        rel = fetch_release(repo, base)
+    except Exception as exc:
+        out["ok"] = False
+        out["error"] = describe_error(exc)
+        log("release check failed: %s" % out["error"])
+        return out
+
+    tag = str(rel.get("tag_name") or rel.get("name") or "").strip()
+    latest = tag[1:] if tag[:1] in ("v", "V") else tag
+    out["latest"] = latest or tag
+    out["name"] = str(rel.get("name") or tag)
+    out["notes"] = str(rel.get("body") or "")[:6000]
+    out["published_at"] = str(rel.get("published_at") or "")
+    out["html_url"] = str(rel.get("html_url") or "")
+    out["assets"] = [
+        {
+            "name": str(a.get("name") or ""),
+            "size": int(a.get("size") or 0),
+            "url": str(a.get("browser_download_url") or ""),
+        }
+        for a in (rel.get("assets") or [])
+        if a.get("browser_download_url")
+    ]
+    out["has_update"] = bool(latest) and version_tuple(latest) > version_tuple(VERSION)
+    with RELEASE_LOCK:
+        RELEASE_CACHE["at"] = now
+        RELEASE_CACHE["payload"] = dict(out)
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -525,6 +637,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             reset_clients()
             self.send_json({"ok": True, "restored": res})
+            return
+
+        if path == "/api/update/check":
+            flag = (qs.get("force") or ["0"])[0].lower()
+            self.send_json(check_update(flag not in ("", "0", "false", "no")))
             return
 
         if path.startswith("/api/qb/"):

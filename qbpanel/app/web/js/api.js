@@ -131,6 +131,11 @@
       return request(BASE + "/backup/delete", { method: "POST", body: { name: name } });
     },
 
+    /* ---- release check ---- */
+    updateCheck: function (force) {
+      return request(BASE + "/update/check" + (force ? "?force=1" : ""));
+    },
+
     /* ---- BitTorrent proxy (qBittorrent WebAPI v2 dialect) ---- */
     qb: function (path, opts) {
       opts = opts || {};

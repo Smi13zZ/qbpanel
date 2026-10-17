@@ -50,6 +50,10 @@
      so every read/write goes through bytesToUnit() / unitToBytes(). */
   const LIMIT_UNITS = { kB: 1024, MB: 1024 * 1024 };
 
+  /* how many backup rows stay visible before the list scrolls; mirrors the
+     5-row viewport pinned by .bscroll in style.css */
+  const BACKUP_ROWS = 5;
+
   function fmtNum(n) {
     n = Number(n) || 0;
     return n.toLocaleString();
@@ -137,6 +141,13 @@
         autoStatus: {},
         autoForm: { enabled: false, interval: 24, retention: 30 },
         backupFile: null,
+        backupsVisible: BACKUP_ROWS,
+
+        /* settings is a sectioned work bar now - one card group at a time */
+        settingsTab: "panel",
+        updateInfo: null,
+        updateError: "",
+        updateChecking: false,
 
         logs: [],
         logLevel: "normal",
@@ -167,6 +178,26 @@
       pageTitle: function () {
         const item = this.navItems.filter((n) => n.id === this.view)[0];
         return item ? item.label : "qbpanel";
+      },
+      /* Sections of the settings page. The downloader section only exists when
+         at least one downloader is configured, so the bar never offers a
+         section that would render an empty page. */
+      settingsTabs: function () {
+        const t = this.t;
+        const out = [
+          { id: "panel", label: t("settings.tab.panel") },
+          { id: "backup", label: t("settings.tab.backup") },
+          { id: "auto", label: t("settings.tab.auto") },
+          { id: "update", label: t("settings.tab.update") },
+        ];
+        if (this.servers.length) out.splice(1, 0, { id: "downloader", label: t("settings.tab.downloader") });
+        return out;
+      },
+      updateNew: function () {
+        return !!(this.updateInfo && this.updateInfo.has_update);
+      },
+      updateNotes: function () {
+        return (this.updateInfo && this.updateInfo.notes) || "";
       },
       themeMode: function () {
         return this.themeOverride || this.settings.theme_mode || "dark";
@@ -267,6 +298,7 @@
     watch: {
       logAuto: function (v) { if (v) this.loadLogs(); },
       filter: function () { this.selection = []; },
+      settingsTab: function (v) { if (v === "update" && !this.updateInfo) this.checkUpdate(false); },
     },
 
     mounted: function () {
@@ -428,6 +460,9 @@ serverName: function () {
           if (this.currentId) await this.bootstrapServer();
           this.tick();
           setInterval(this.tick, 1000);
+          /* deferred: the panel must paint before we spend a network round
+             trip on the release feed (which may be slow or unreachable) */
+          setTimeout(() => { this.checkUpdate(false); }, 1500);
         } catch (e) {
           this.loaded = true;
           this.toast(this.t("err.loadConfig", { v: e.message }), "err");
@@ -1109,6 +1144,14 @@ serverName: function () {
         }
       },
 
+      /* Phone-sized label for a backup: drop the constant prefix so the
+         date+time (the only part that differs) fits without ellipsis. */
+      backupLabel: function (name) {
+        const s = String(name || "");
+        const m = s.match(/(\d{8}-\d{6}.*)$/);
+        return m ? m[1] : s;
+      },
+
       saveAuto: async function () {
         const st = this.autoStatus || {};
         const iv = Number(this.autoForm.interval) || 0;
@@ -1177,6 +1220,44 @@ serverName: function () {
             }
           },
         };
+      },
+
+      /* ---------------- release check ----------------
+         Fired once shortly after start-up (so the sidebar marker is already
+         meaningful when the user opens the panel) and re-run on demand from
+         the Update section. A failed check is not fatal: the panel keeps
+         working and the section shows why it could not reach the feed. */
+      /* prefer the packaged .fpk asset, fall back to the release page */
+      updateAssetUrl: function () {
+        const list = (this.updateInfo && this.updateInfo.assets) || [];
+        const pkg = list.filter(function (a) { return /\.fpk$/i.test(a.name || ""); })[0];
+        if (pkg && pkg.url) return pkg.url;
+        return (this.updateInfo && this.updateInfo.html_url) || "";
+      },
+      updateReleaseUrl: function () {
+        return (this.updateInfo && this.updateInfo.html_url) || "";
+      },
+      updateRepoLabel: function () {
+        return (this.updateInfo && this.updateInfo.repo) || "Smi13zZ/qbpanel";
+      },
+      checkUpdate: async function (force) {
+        if (this.updateChecking) return;
+        this.updateChecking = true;
+        this.updateError = "";
+        try {
+          const r = await API.updateCheck(!!force);
+          this.updateInfo = r || null;
+          if (r && r.ok === false) {
+            this.updateError = this.t("update.failed", { v: r.error || "?" });
+          } else if (r && r.has_update && !this._updateNotified) {
+            this._updateNotified = true;
+            this.toast(this.t("update.newToast", { v: r.latest }));
+          }
+        } catch (e) {
+          this.updateError = this.t("update.failed", { v: e.message });
+        } finally {
+          this.updateChecking = false;
+        }
       },
 
       /* ---------------- charts ---------------- */
