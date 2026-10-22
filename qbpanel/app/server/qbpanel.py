@@ -817,25 +817,34 @@ printf 'wizard_backend_port=%%s\\n' '%(port)s' > "$ENVF"
 appcenter-cli uninstall "$APP"
 sleep 3
 appcenter-cli install-fpk -e "$ENVF" "%(pkg)s"
-# install-fpk 返回时应用中心可能还没登记完，立刻 start 会报 10500
-# （"Failed to launch app"）。换成最多重试 6 次、每次 3 秒，成功的就不用再等系统兜底。
-n=0
+# install-fpk 返回时应用中心往往还没把应用登记完，立刻 start 会报
+# "Something wrong with appcenter: code 10500 / Failed to launch app"，
+# 而几秒后系统又会自己把它拉起来 —— 用户只在版面里看到一条像失败的报错。
+# 因此改成：先看状态，真没起来才 start；start 的输出先收起来，
+# 只有最终确实没起来时才把它打出来（并进入回滚分支）。
 started=0
+n=0
+last=""
 while [ "$n" -lt 6 ]; do
-  appcenter-cli start "$APP" || true
+  if appcenter-cli status "$APP" | grep -qE 'running|starting'; then
+    started=1
+    break
+  fi
+  last=$(appcenter-cli start "$APP" 2>&1 || true)
   sleep 3
   if appcenter-cli status "$APP" | grep -qE 'running|starting'; then
     started=1
     break
   fi
   n=$((n + 1))
-  echo "=== start retry $n ==="
+  echo "=== start attempt $n did not report running, retrying ==="
 done
 if [ "$started" = "1" ]; then
   echo "=== update finished ==="
   exit 0
 fi
 echo "=== new package did not start ==="
+[ -n "$last" ] && echo "$last"
 if [ -n "%(prev)s" ] && [ -f "%(prev)s" ]; then
   echo "=== rolling back ==="
   appcenter-cli uninstall "$APP"
