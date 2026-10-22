@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.10.26">
+<link rel="stylesheet" href="./style.css?v=26.10.27">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -808,7 +808,8 @@
             {{ notifyLogLoading ? t('notifyLog.loading')
               : (notifyLog.length ? t('notifyLog.noneMatch') : t('notifyLog.empty')) }}
           </div>
-          <div class="nlog" v-else>
+          <div class="nlog" v-else ref="notifyLogList"
+               :style="notifyLogHeight ? { maxHeight: notifyLogHeight + 'px' } : null">
             <div class="nlogrow" v-for="r in notifyLogShown" :key="r.id">
               <span class="nlogstate" :class="r.ok ? 'ok' : 'err'">{{ r.ok ? t('notifyLog.ok') : t('notifyLog.fail') }}</span>
               <div class="nlogin">
@@ -1380,10 +1381,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.10.26"></script>
-<script src="./js/util.js?v=26.10.26"></script>
-<script src="./js/api.js?v=26.10.26"></script>
-<script src="./js/charts.js?v=26.10.26"></script>
-<script src="./js/app.js?v=26.10.26"></script>
+<script src="./js/i18n.js?v=26.10.27"></script>
+<script src="./js/util.js?v=26.10.27"></script>
+<script src="./js/api.js?v=26.10.27"></script>
+<script src="./js/charts.js?v=26.10.27"></script>
+<script src="./js/app.js?v=26.10.27"></script>
 </body>
 </html>

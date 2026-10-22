@@ -59,6 +59,11 @@
      5-row viewport pinned by .bscroll in style.css */
   const BACKUP_ROWS = 5;
 
+  /* 投递记录固定露出 5 条，其余在卡片里滚动。行高随正文行数与错误原因变化，
+     所以按真实高度量（measureNotifyLog），写死 max-height 会露出半行。 */
+  const NOTIFY_LOG_ROWS = 5;
+  const NOTIFY_LOG_GAP = 8;
+
   function fmtNum(n) {
     n = Number(n) || 0;
     return n.toLocaleString();
@@ -173,6 +178,7 @@
         notifyLogLoading: false,
         notifyLogFilter: "all",
         clearingNotifyLog: false,
+        notifyLogHeight: 0,
 
         logs: [],
         logsLoading: false,
@@ -357,6 +363,8 @@
         if (v === "update" && !this.updateInfo) this.checkUpdate(false);
         if (v === "notify") this.loadNotify();
       },
+      notifyLogFilter: function () { this.$nextTick(this.measureNotifyLog); },
+      lang: function () { this.$nextTick(this.measureNotifyLog); },
       "channelForm.type": function (type) {
         if (type) this.ensureChannelFields(type);
       },
@@ -365,7 +373,7 @@
     mounted: function () {
       this.init();
       this._sparkTimer = setInterval(this.sparkTick, 1000);
-      this._onResize = this.drawCharts.bind(this);
+      this._onResize = () => { this.drawCharts(); this.measureNotifyLog(); };
       window.addEventListener("resize", this._onResize);
       this._mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
       if (this._mq) {
@@ -1432,7 +1440,22 @@ serverName: function () {
           /* keep whatever is already on screen */
         } finally {
           this.notifyLogLoading = false;
+          this.$nextTick(this.measureNotifyLog);
         }
+      },
+      /* 把列表高度锁在前 5 行的实际高度上，多余的在卡片内滚动 */
+      measureNotifyLog: function () {
+        const box = this.$refs.notifyLogList;
+        if (!box) return;
+        const rows = Array.prototype.slice.call(box.children, 0, NOTIFY_LOG_ROWS);
+        if (!rows.length) {
+          this.notifyLogHeight = 0;
+          return;
+        }
+        let h = 0;
+        rows.forEach(function (row) { h += row.getBoundingClientRect().height; });
+        h += NOTIFY_LOG_GAP * (rows.length - 1);
+        this.notifyLogHeight = Math.ceil(h);
       },
       notifyEventLabel: function (event) {
         const key = "notifyLog.event." + (event || "manual");
