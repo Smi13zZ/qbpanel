@@ -42,7 +42,14 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "platform=$plat" >> "$GITHUB_OUTPUT"
-          echo "打包 $app $ver ($plat)"
+          # 只有「标签名 == v<manifest 版本>」才允许发 Release，
+          # 这样临时验证标签（v26.10.23-ci1 之类）只会出 artifact，不会污染发布页
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ "${GITHUB_REF_NAME:-}" = "v$ver" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "打包 $app $ver ($plat)，发布=$( [ "${GITHUB_REF_NAME:-}" = "v$ver" ] && echo yes || echo no )"
 
       - name: 安装 fnpack
         run: |
@@ -82,7 +89,7 @@ jobs:
           for f in "$GITHUB_WORKSPACE"/*.fpk; do python3 tools/verify_fpk.py "$f"; done
 
       - name: 记录发布说明
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.meta.outputs.publish == 'true'
         run: |
           set -euo pipefail
           ver="${{ steps.meta.outputs.version }}"
@@ -104,7 +111,7 @@ jobs:
           retention-days: 30
 
       - name: 发布到 Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.meta.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
