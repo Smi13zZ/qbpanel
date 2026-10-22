@@ -1,5 +1,5 @@
 appname               = fn-qbpanel
-version               = 26.10.23
+version               = 26.10.24
 display_name          = qBpanel
 desc                  = qBpanel 是运行在飞牛 fnOS 上的 BitTorrent 控制面板，原生支持 qBittorrent WebAPI 与 Transmission RPC。提供实时速度曲线、任务列表与批量操作、种子详情（文件/Tracker/节点）、分类统计、日志查看与深浅主题切换。所有请求由本机服务转发，下载器地址与账号密码只保存在设备本地，浏览器侧无需直连下载器。
 platform              = all
