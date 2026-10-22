@@ -166,8 +166,16 @@
         channelForm: null,
         savingChannel: false,
         testingChannel: "",
+        /* delivery records: newest first, mirrors var/notify-log.json */
+        notifyLog: [],
+        notifyLogTotal: 0,
+        notifyLogMax: 200,
+        notifyLogLoading: false,
+        notifyLogFilter: "all",
+        clearingNotifyLog: false,
 
         logs: [],
+        logsLoading: false,
         logLevel: "normal",
         logLevels: ["normal", "info", "warning", "critical"],
         logAuto: false,
@@ -323,14 +331,31 @@
           return (b.added_on || 0) - (a.added_on || 0);
         }).slice(0, 5);
       },
+      notifyLogShown: function () {
+        const f = this.notifyLogFilter;
+        if (f === "ok") return this.notifyLog.filter(function (r) { return r.ok; });
+        if (f === "fail") return this.notifyLog.filter(function (r) { return !r.ok; });
+        return this.notifyLog;
+      },
+      notifyLogFailed: function () {
+        return this.notifyLog.filter(function (r) { return !r.ok; }).length;
+      },
     },
 
     watch: {
       logAuto: function (v) { if (v) this.loadLogs(); },
       filter: function () { this.selection = []; },
+      /* the logs page reads the *active* downloader through the proxy, so a
+         server switch has to drop the old list and pull the new one - keeping
+         the previous server's lines on screen was the bug. */
+      currentId: function () {
+        if (this.view !== "logs") return;
+        this.resetLogs();
+        this.loadLogs();
+      },
       settingsTab: function (v) {
         if (v === "update" && !this.updateInfo) this.checkUpdate(false);
-        if (v === "notify" && !this.notifyChannels.length) this.loadNotify();
+        if (v === "notify") this.loadNotify();
       },
       "channelForm.type": function (type) {
         if (type) this.ensureChannelFields(type);
@@ -1096,17 +1121,30 @@ serverName: function () {
       },
 
       /* ---------------- logs ---------------- */
+      resetLogs: function () {
+        this.logs = [];
+        this._lastLog = 0;
+      },
       loadLogs: async function () {
+        /* snapshot the server id: a switch can land while this request is in
+           flight and the reply would then belong to the previous downloader */
+        const sid = this.currentId;
+        this.logsLoading = true;
         try {
           const params = {};
           ["normal", "info", "warning", "critical"].forEach((k) => { params[k] = false; });
           params[this.logLevel] = true;
           const arr = await API.qb("api/v2/log/main", { params: params });
+          if (sid !== this.currentId) return;
           const order = { critical: "err", warning: "warn", info: "", normal: "" };
           this.logs = (Array.isArray(arr) ? arr : []).map(function (l) {
             return { timestamp: l.timestamp, message: l.message, type: order[l.type] || "" };
           }).reverse();
-        } catch (e) { this.logs = []; }
+        } catch (e) {
+          if (sid === this.currentId) this.logs = [];
+        } finally {
+          if (sid === this.currentId) this.logsLoading = false;
+        }
       },
 
       /* ---------------- backups ---------------- */
@@ -1378,6 +1416,51 @@ serverName: function () {
         } catch (e) {
           /* the section simply stays empty; nothing else depends on it */
         }
+        this.loadNotifyLog();
+      },
+      /* delivery records live next to the channels: one row per attempt, so a
+         silently failing webhook is visible instead of guesswork */
+      loadNotifyLog: async function () {
+        if (this.notifyLogLoading) return;
+        this.notifyLogLoading = true;
+        try {
+          const r = await API.notifyLog(120);
+          this.notifyLog = (r && r.records) || [];
+          this.notifyLogTotal = r && r.total !== undefined ? r.total : this.notifyLog.length;
+          if (r && r.max) this.notifyLogMax = r.max;
+        } catch (e) {
+          /* keep whatever is already on screen */
+        } finally {
+          this.notifyLogLoading = false;
+        }
+      },
+      notifyEventLabel: function (event) {
+        const key = "notifyLog.event." + (event || "manual");
+        const label = this.t(key);
+        return label === key ? (event || "") : label;
+      },
+      askClearNotifyLog: function () {
+        if (!this.notifyLog.length) return;
+        const self = this;
+        this.confirmBox = {
+          title: this.t("notifyLog.clear"),
+          text: this.t("notifyLog.clearConfirm"),
+          okText: this.t("notifyLog.clear"),
+          onOk: async function () {
+            self.confirmBox = null;
+            self.clearingNotifyLog = true;
+            try {
+              await API.clearNotifyLog();
+              self.notifyLog = [];
+              self.notifyLogTotal = 0;
+              self.toast(self.t("notifyLog.cleared"));
+            } catch (e) {
+              self.toast(e.message, "err");
+            } finally {
+              self.clearingNotifyLog = false;
+            }
+          },
+        };
       },
       notifyTypeLabel: function (type) {
         const key = "notify.type." + type;
@@ -1484,6 +1567,7 @@ serverName: function () {
           this.toast(e.message, "err");
         } finally {
           this.testingChannel = "";
+          this.loadNotifyLog();
         }
       },
 

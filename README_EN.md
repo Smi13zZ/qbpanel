@@ -39,10 +39,10 @@ Two backends are supported: **qBittorrent (WebAPI v2, 4.x and 5.x)** and **Trans
 | **Task detail** | Four tabs: general info, files (per-file priority), trackers, peers |
 | **Servers** | Manage several qBittorrent / Transmission instances; test before saving; switch from the top bar; duplicate addresses rejected |
 | **Stats** | All-time upload / download, global ratio, speed trend, status distribution, category share, connection info |
-| **Logs** | Downloader log with level colours (normal / info / warning / critical) and auto refresh |
+| **Logs** | Downloader log with level colours (normal / info / warning / critical) and auto refresh; switching servers swaps the log list with it |
 | **Settings** | Sectioned work bar (panel / downloader / maintenance / notifications / update); tri-state theme, EN / 中文, refresh interval, global speed limits, default save path |
 | **Backups** | Export / import JSON config, scheduled auto-backup into the fnOS app folder; the list shows five rows and scrolls, with restore or delete per entry |
-| **Notifications** | Five channel types — Bark, ServerChan, PushPlus, WxPusher and custom webhooks; events for finished torrents and new releases; per-channel test send, secrets stay on the device |
+| **Notifications** | Five channel types — Bark, ServerChan, PushPlus, WxPusher and custom webhooks; events for finished torrents and new releases; per-channel test send, secrets stay on the device; **delivery records** show whether each push went out, why it failed and what was sent |
 | **Updates** | Reads the latest published release from GitHub and compares it with the installed build; a banner appears on every page and the sidebar flags it. **One-click update** downloads the package, runs the system installer and rolls back automatically if the new build fails to start |
 | **Mobile** | Drawer sidebar, bottom-sheet pickers, card layout — tuned inside the fnOS phone app's embedded browser |
 | **Deep links** | `?view=`, `?theme=`, `?lang=` and `?hash=` parameters |
@@ -102,7 +102,7 @@ Mobile (390px):
 
 ```bash
 printf 'wizard_backend_port=8898\n' > /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.22-fnos-all.fpk
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.23-fnos-all.fpk
 ```
 
 > Two gotchas: the `-e` env file is **mandatory**, otherwise you get
@@ -167,13 +167,23 @@ Every downloader instance as a card with name, type, address, status and version
 
 ### 5. Stats / Logs / Settings
 
-Stats collects all-time traffic, global ratio, speed trend, status distribution, category share and connection info (listening port, DHT nodes, connection status, downloader version). Logs shows the downloader log with level colours and optional auto refresh.
+Stats collects all-time traffic, global ratio, speed trend, status distribution, category share and connection info (listening port, DHT nodes, connection status, downloader version). Logs shows the downloader log with level colours and optional auto refresh; switching servers in the top bar swaps the list with it and discards replies that arrive from the previous downloader.
 
 Settings opens with a sectioned work bar so one group of options is on screen at a time: **Panel** (theme, refresh interval, delete confirmation), **Downloader** (global limits, default save path, read-only connection info), **Maintenance** (backup & restore plus automatic backup), **Notifications**, and **Update**.
 
 ### 6. Notifications
 
 Configured under Settings → Notifications. Channels: **Bark** (server + device key), **ServerChan** (SendKey), **PushPlus** (token), **WxPusher** (appToken, optional UID / topic), and a **custom webhook** (URL plus optional `Key: Value` headers). Two event switches: *torrent finished* (sent once per torrent) and *new version* (once per release). Each channel has a **Test** button; secrets are stored locally and never echoed back.
+
+#### Delivery records
+
+Below the channel list sits **Delivery records**. Every push leaves one entry — finished torrents, new releases and manual **Test** sends alike. Each row shows:
+
+- **Sent / Failed**, with the failure reason when it failed (HTTP status, timeout, connection refused…);
+- the **title and body** that were delivered (body capped at 600 characters), so you can confirm what actually went out;
+- the **channel**, the event type (finished / new release / test) and the timestamp.
+
+Filter by all / sent / failed, refresh by hand or clear the list. Records live in `/usr/local/apps/@appdata/fn-qbpanel/notify-log.json`, the latest 200 are kept, and they only hold message content — never channel secrets.
 
 ### 7. Updates
 

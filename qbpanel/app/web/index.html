@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.10.22">
+<link rel="stylesheet" href="./style.css?v=26.10.23">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -464,7 +464,7 @@
             </span>
             <span class="m">{{ l.message }}</span>
           </div>
-          <div class="empty" v-if="!logs.length">{{ t('logs.empty') }}</div>
+          <div class="empty" v-if="!logs.length">{{ logsLoading ? t('logs.loading') : t('logs.empty') }}</div>
         </div>
       </template>
 
@@ -782,6 +782,51 @@
             </div>
           </div>
           <div class="hint" style="margin-top:12px">{{ t('notify.channelHint') }}</div>
+        </div>
+
+        <div class="card" v-if="settingsTab === 'notify'">
+          <div class="card-head nlog-head">
+            <h3>{{ t('notifyLog.title') }}</h3>
+            <div class="spacer"></div>
+            <div class="seg nlog-seg">
+              <button type="button" :class="{ on: notifyLogFilter === 'all' }"
+                      @click="notifyLogFilter = 'all'">{{ t('notifyLog.filter.all') }}</button>
+              <button type="button" :class="{ on: notifyLogFilter === 'ok' }"
+                      @click="notifyLogFilter = 'ok'">{{ t('notifyLog.filter.ok') }}</button>
+              <button type="button" :class="{ on: notifyLogFilter === 'fail' }"
+                      @click="notifyLogFilter = 'fail'">{{ t('notifyLog.filter.fail') }}<span
+                      class="nlogbadge" v-if="notifyLogFailed">{{ notifyLogFailed }}</span></button>
+            </div>
+            <button class="btn sm" type="button" :disabled="notifyLogLoading" @click="loadNotifyLog()">
+              {{ t('notifyLog.refresh') }}
+            </button>
+            <button class="btn sm danger" type="button" :disabled="clearingNotifyLog || !notifyLog.length"
+                    @click="askClearNotifyLog()">{{ t('notifyLog.clear') }}</button>
+          </div>
+          <p class="dim" style="margin:0 0 12px">{{ t('notifyLog.desc', { n: notifyLogMax }) }}</p>
+          <div class="empty" v-if="!notifyLogShown.length">
+            {{ notifyLogLoading ? t('notifyLog.loading')
+              : (notifyLog.length ? t('notifyLog.noneMatch') : t('notifyLog.empty')) }}
+          </div>
+          <div class="nlog" v-else>
+            <div class="nlogrow" v-for="r in notifyLogShown" :key="r.id">
+              <span class="nlogstate" :class="r.ok ? 'ok' : 'err'">{{ r.ok ? t('notifyLog.ok') : t('notifyLog.fail') }}</span>
+              <div class="nlogin">
+                <div class="nlogtop">
+                  <span class="nlogtitle ellipsis">{{ r.title }}</span>
+                  <span class="nlogtag">{{ notifyEventLabel(r.event) }}</span>
+                </div>
+                <div class="nlogbody">{{ r.body }}</div>
+                <div class="nlogmeta">
+                  <span class="ellipsis">{{ r.channel }}</span>
+                  <span class="sep">·</span>
+                  <span>{{ fmt.fmtDate(r.at) }}</span>
+                </div>
+                <div class="nlogerr" v-if="!r.ok && r.detail">{{ r.detail }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:12px">{{ t('notifyLog.hint') }}</div>
         </div>
 
         <!-- ---------- release / update ---------- -->
@@ -1335,10 +1380,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.10.22"></script>
-<script src="./js/util.js?v=26.10.22"></script>
-<script src="./js/api.js?v=26.10.22"></script>
-<script src="./js/charts.js?v=26.10.22"></script>
-<script src="./js/app.js?v=26.10.22"></script>
+<script src="./js/i18n.js?v=26.10.23"></script>
+<script src="./js/util.js?v=26.10.23"></script>
+<script src="./js/api.js?v=26.10.23"></script>
+<script src="./js/charts.js?v=26.10.23"></script>
+<script src="./js/app.js?v=26.10.23"></script>
 </body>
 </html>

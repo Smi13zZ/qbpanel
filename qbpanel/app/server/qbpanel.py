@@ -511,6 +511,71 @@ def save_notify_state(state):
         log("notify state save failed: %r" % (exc,))
 
 
+# --------------------------------------------------------------------------
+# delivery records
+#
+# Every attempt - the two automatic events and the "test" button - is written
+# here, so the settings page can answer "did it really go out, and what was in
+# it?" without digging through the service log. Newest first, ring buffered.
+# --------------------------------------------------------------------------
+NOTIFY_LOG_FILE = os.path.join(var_dir(), "notify-log.json")
+NOTIFY_LOG_LOCK = threading.Lock()
+NOTIFY_LOG_MAX = 200
+NOTIFY_LOG_BODY = 600
+
+
+def load_notify_log():
+    try:
+        with open(NOTIFY_LOG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    recs = data.get("records") if isinstance(data, dict) else data
+    if not isinstance(recs, list):
+        return []
+    return [r for r in recs if isinstance(r, dict)]
+
+
+def save_notify_log(records):
+    try:
+        tmp = NOTIFY_LOG_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"records": records}, f, ensure_ascii=False)
+        os.replace(tmp, NOTIFY_LOG_FILE)
+    except Exception as exc:
+        log("notify log save failed: %r" % (exc,))
+
+
+def clear_notify_log():
+    with NOTIFY_LOG_LOCK:
+        save_notify_log([])
+
+
+def record_delivery(channel, title, body, event, res):
+    """Append one delivery attempt. The message body is kept - that is the
+    whole point of the record - but channel secrets never are: they live in
+    config.json only."""
+    rec = {
+        "id": uuid.uuid4().hex[:12],
+        "at": int(time.time()),
+        "event": event or "manual",
+        "channel": channel.get("name") or channel.get("type") or "",
+        "channel_id": channel.get("id") or "",
+        "type": channel.get("type") or "",
+        "ok": bool(res.get("ok")),
+        "detail": str(res.get("detail") or "")[:300],
+        "title": str(title or "")[:200],
+        "body": str(body or "")[:NOTIFY_LOG_BODY],
+    }
+    with NOTIFY_LOG_LOCK:
+        recs = load_notify_log()
+        recs.insert(0, rec)
+        if len(recs) > NOTIFY_LOG_MAX:
+            del recs[NOTIFY_LOG_MAX:]
+        save_notify_log(recs)
+    return rec
+
+
 def dispatch(title, body, event=""):
     """Fan a message out to every enabled channel."""
     cfg = notify_settings()
@@ -521,6 +586,7 @@ def dispatch(title, body, event=""):
         if not ch.get("enabled", True):
             continue
         res = notify.send(ch, title, body)
+        record_delivery(ch, title, body, event, res)
         results.append({
             "id": ch.get("id") or "",
             "name": ch.get("name") or ch.get("type") or "",
@@ -1247,12 +1313,31 @@ class Handler(BaseHTTPRequestHandler):
             if not ch:
                 self.fail(404, "channel not found")
                 return
-            res = notify.send(
-                ch,
-                "qBpanel 通知测试",
-                "如果你收到这条消息，说明「%s」渠道配置正确。" % (ch.get("name") or ch.get("type")),
-            )
+            title = "qBpanel 通知测试"
+            body = "如果你收到这条消息，说明「%s」渠道配置正确。" % (ch.get("name") or ch.get("type"))
+            res = notify.send(ch, title, body)
+            record_delivery(ch, title, body, "test", res)
             self.send_json({"ok": bool(res.get("ok")), "result": res})
+            return
+
+        if path == "/api/notify/log" and method == "GET":
+            try:
+                limit = int((qs.get("limit") or ["50"])[0])
+            except (TypeError, ValueError):
+                limit = 50
+            limit = max(1, min(limit, NOTIFY_LOG_MAX))
+            recs = load_notify_log()
+            self.send_json({
+                "ok": True,
+                "records": recs[:limit],
+                "total": len(recs),
+                "max": NOTIFY_LOG_MAX,
+            })
+            return
+
+        if path == "/api/notify/log" and method == "DELETE":
+            clear_notify_log()
+            self.send_json({"ok": True})
             return
 
         if path.startswith("/api/qb/"):
