@@ -94,7 +94,8 @@ jobs:
           set -euo pipefail
           ver="${{ steps.meta.outputs.version }}"
           awk -v v="$ver" '
-            $0 ~ "^## "v"[ \t]*$" {flag=1; print "## qBpanel "v; print ""; next}
+            $0 ~ "^## "v"[ \t]*$" {flag=1; print "## qBpanel "v; print ""; skip=1; next}
+            flag && skip && $0 ~ /^[ \t]*$/ {skip=0; next}
             flag && /^## / {exit}
             flag {print}
           ' CHANGELOG.md > /tmp/release-body.md
