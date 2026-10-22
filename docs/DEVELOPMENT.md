@@ -67,12 +67,16 @@ QBPANEL_PORT=8898 python3 qbpanel.py
 
 ## 打包 fpk
 
-```bash
-python tools/build_fpk.py            # 打包 + 推送到目标设备
-python tools/build_fpk.py --no-push  # 只本地打包
-```
+**首选 CI**：`.github/workflows/build-fpk.yml`
 
-**不要在 Windows 上手工重新打 tar 包** —— 会破坏归档格式，安装时报 `code 10111`。正确流程是：把源码同步到 Linux 侧 → `chmod 755 cmd/* app/ui/index.cgi`，其余 644 → 用官方 `fnpack build` 打包。`tools/build_fpk.py` 就是这条流程的封装。`checksum` 取 `app.tgz` 的 MD5。
+- 推 `v*` 标签 → 构建 + `tools/verify_fpk.py` 校验 + 上传 artifact + 附到该标签的 Release（说明取 `CHANGELOG.md` 对应小节）
+- Actions 手动 Run workflow → 只构建 + artifact，不动 Release
+
+CI 下载官方 `fnpack-1.2.3-linux-amd64`（`https://static2.fnnas.com/fnpack/`），把 `qbpanel/` 拷到 `/tmp/build` 后统一修权限（目录 755、文件 644、`cmd/*` 与 `app/ui/index.cgi` 755）再 `fnpack build`。
+
+**本地兜底**：`python tools/build_fpk.py` 走 `remote.py` 把源码同步到设备上打包，需要 `..\.workbuddy\scripts\remote.py` 与本机 Python 环境。
+
+**不要在 Windows 上手工重新打 tar 包** —— 会破坏归档格式，安装时报 `code 10111`。打完用 `python tools/verify_fpk.py <file.fpk>` 自检结构：manifest 版本号与文件名一致、`cmd/*` 与 `ui/index.cgi` 可执行位、内层关键文件齐全。
 
 ## 验证脚本
 

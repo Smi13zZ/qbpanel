@@ -1,0 +1,114 @@
+name: build-fpk
+
+# 在 GitHub 上直接打出 fnOS 安装包：
+#   * 推 v* 标签        → 构建 + 上传 workflow artifact + 自动发布到该标签的 Release
+#   * 手动 workflow_dispatch → 只构建 + 上传 artifact（不会动 Release）
+#
+# 版本号以 qbpanel/manifest 里的 version 为准，所以发布流程是：
+#   改 manifest（顺带 index.html 的 ?v=、CHANGELOG）→ commit → 打 tag → push tag
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-fpk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 官方只发布了 1.2.3 的 linux-amd64 二进制；1.2.4 目前取不到
+  FNPACK_URL: https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 读取 manifest 里的版本号
+        id: meta
+        run: |
+          set -euo pipefail
+          field() { awk -F= -v k="$1" '{n=$1; gsub(/[ \t]/,"",n); if(n==k){v=$2; gsub(/[ \t]/,"",v); print v}}' qbpanel/manifest; }
+          ver="$(field version)"
+          app="$(field appname)"
+          plat="$(field platform)"
+          [ -n "$ver" ] || { echo "manifest 里没有 version"; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "platform=$plat" >> "$GITHUB_OUTPUT"
+          echo "打包 $app $ver ($plat)"
+
+      - name: 安装 fnpack
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/fnpack "$FNPACK_URL"
+          chmod +x /tmp/fnpack
+          sudo mv /tmp/fnpack /usr/local/bin/fnpack
+          fnpack build --help >/dev/null
+          echo "fnpack 就绪：$(fnpack --help 2>&1 | grep -i version || echo 1.2.3)"
+
+      - name: 准备打包目录
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/build && mkdir -p /tmp/build
+          cp -a qbpanel/. /tmp/build/
+          find /tmp/build -name "__pycache__" -type d -prune -exec rm -rf {} +
+          find /tmp/build -type f \( -name "*.pyc" -o -name "*.fpk" -o -name "*.orig" \) -delete
+          # fnOS 要求脚本带可执行位；源码检出后全是 644，这里统一修正
+          find /tmp/build -type d -exec chmod 755 {} +
+          find /tmp/build -type f -exec chmod 644 {} +
+          chmod 755 /tmp/build/cmd/* /tmp/build/app/ui/index.cgi
+          ls -l /tmp/build | head -20
+
+      - name: 打包
+        run: |
+          set -euo pipefail
+          cd /tmp/build
+          fnpack build
+          out="$GITHUB_WORKSPACE/${{ steps.meta.outputs.app }}-${{ steps.meta.outputs.version }}-fnos-${{ steps.meta.outputs.platform }}.fpk"
+          mv "${{ steps.meta.outputs.app }}.fpk" "$out"
+          ls -l "$out"
+          sha256sum "$out"
+
+      - name: 校验包结构
+        run: |
+          set -euo pipefail
+          for f in "$GITHUB_WORKSPACE"/*.fpk; do python3 tools/verify_fpk.py "$f"; done
+
+      - name: 记录发布说明
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.version }}"
+          awk -v v="$ver" '
+            $0 ~ "^## "v"[ \t]*$" {flag=1; print "## qBpanel "v; print ""; next}
+            flag && /^## / {exit}
+            flag {print}
+          ' CHANGELOG.md > /tmp/release-body.md
+          printf '\n### 安装\n\n1. 下载下方 `%s-%s-fnos-%s.fpk`\n2. 飞牛 fnOS → 应用中心 → 手动安装 → 选择该文件\n3. 已在旧版本的，可以直接在「设置 → 更新」里点一键更新\n' \
+            "${{ steps.meta.outputs.app }}" "$ver" "${{ steps.meta.outputs.platform }}" >> /tmp/release-body.md
+          echo "----- release body -----"
+          cat /tmp/release-body.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.app }}-${{ steps.meta.outputs.version }}-fnos-${{ steps.meta.outputs.platform }}
+          path: ${{ github.workspace }}/*.fpk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 发布到 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: qBpanel ${{ steps.meta.outputs.version }}
+          body_path: /tmp/release-body.md
+          files: ${{ github.workspace }}/*.fpk
+          fail_on_unmatched_files: true

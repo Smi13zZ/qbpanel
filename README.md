@@ -277,17 +277,25 @@ qbpanel/
     └── ui/                  # 桌面入口（index.cgi 反向代理到本地端口）与图标
 ```
 
-构建命令（`tools/build_fpk.py`）：
+### 用 GitHub Actions 构建（推荐）
+
+仓库自带 `.github/workflows/build-fpk.yml`，不需要本地环境：
+
+- **推 `v*` 标签** → 自动构建 → 校验包结构 → 上传 workflow artifact，并把 `.fpk` 附到该标签的 Release（发布说明自动取出 `CHANGELOG.md` 里对应版本那一节）
+- **Actions 页面手动 Run workflow** → 只构建并上传 artifact，不动 Release
+
+所以发版就是三步：改 `qbpanel/manifest` 的 `version`（顺带 `index.html` 的 `?v=` 与 `CHANGELOG.md`）→ commit → `git tag v<版本> && git push --tags`。
+
+CI 用官方 `fnpack-1.2.3-linux-amd64`（<https://static2.fnnas.com/fnpack/>），构建前统一修正权限：目录 755、文件 644、`cmd/*` 与 `app/ui/index.cgi` 755。
+
+### 本地打包（备用）
 
 ```bash
-# 打包并自动推送到设备安装目录
-python tools/build_fpk.py
-
-# 只本地打包
-python tools/build_fpk.py --no-push
+python tools/build_fpk.py           # 走 remote.py 把源码同步到飞牛设备用 fnpack 打包
+python tools/verify_fpk.py *.fpk    # 自检：版本号、可执行位、关键文件
 ```
 
-> ⚠️ **不要在 Windows 上手工重新打 tar 包**：会破坏归档格式，安装时报 `code 10111`。正确做法是把源码同步到设备（或任意 Linux 机器）后，用官方 `fnpack build` 打包 —— `tools/build_fpk.py` 就是这个流程的封装。
+> ⚠️ **不要在 Windows 上手工重新打 tar 包**：会破坏归档格式，安装时报 `code 10111`。正确做法是让官方 `fnpack build` 在 Linux 侧打包，CI 或 `tools/build_fpk.py` 都是这条流程。
 
 本地跑起来看效果（不需要打包）：
 
