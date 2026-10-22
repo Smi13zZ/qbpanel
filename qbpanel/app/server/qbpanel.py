@@ -817,9 +817,21 @@ printf 'wizard_backend_port=%%s\\n' '%(port)s' > "$ENVF"
 appcenter-cli uninstall "$APP"
 sleep 3
 appcenter-cli install-fpk -e "$ENVF" "%(pkg)s"
-appcenter-cli start "$APP"
-sleep 9
-if appcenter-cli status "$APP" | grep -qE 'running|starting'; then
+# install-fpk 返回时应用中心可能还没登记完，立刻 start 会报 10500
+# （"Failed to launch app"）。换成最多重试 6 次、每次 3 秒，成功的就不用再等系统兜底。
+n=0
+started=0
+while [ "$n" -lt 6 ]; do
+  appcenter-cli start "$APP" || true
+  sleep 3
+  if appcenter-cli status "$APP" | grep -qE 'running|starting'; then
+    started=1
+    break
+  fi
+  n=$((n + 1))
+  echo "=== start retry $n ==="
+done
+if [ "$started" = "1" ]; then
   echo "=== update finished ==="
   exit 0
 fi
