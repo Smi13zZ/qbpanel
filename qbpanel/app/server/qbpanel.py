@@ -467,8 +467,31 @@ def check_update(force=False):
 NOTIFY_STATE_FILE = os.path.join(var_dir(), "notify-state.json")
 NOTIFY_STATE_LOCK = threading.Lock()
 # The completion monitor polls every server in turn, so one dead downloader
-# must not eat the whole cycle: keep each snapshot call short.
+# must not eat the whole cycle: keep each snapshot call short, and stop asking
+# a server that keeps failing for a while.
 NOTIFY_POLL_TIMEOUT = 12
+NOTIFY_FAIL_SKIP_AFTER = 2
+NOTIFY_FAIL_SKIP_SECS = 300
+NOTIFY_FAIL = {}
+NOTIFY_FAIL_LOCK = threading.Lock()
+
+
+def notify_fail_skip(sid, now):
+    """True while a repeatedly failing server is resting, so the loop stays
+    responsive instead of waiting on the same dead host every cycle."""
+    with NOTIFY_FAIL_LOCK:
+        ent = NOTIFY_FAIL.get(sid)
+        return bool(ent) and ent[1] > now
+
+
+def notify_fail_note(sid, failed, now):
+    with NOTIFY_FAIL_LOCK:
+        if not failed:
+            NOTIFY_FAIL.pop(sid, None)
+            return
+        fails = (NOTIFY_FAIL.get(sid) or [0, 0.0])[0] + 1
+        skip_until = now + NOTIFY_FAIL_SKIP_SECS if fails >= NOTIFY_FAIL_SKIP_AFTER else 0.0
+        NOTIFY_FAIL[sid] = [fails, skip_until]
 
 
 def default_notify_settings():
@@ -624,21 +647,25 @@ def notify_update_event(info):
 
 
 def torrents_snapshot(server=None):
-    """Torrent list of one server - the current one when none is given."""
+    """Torrent list of one server - the current one when none is given.
+
+    Returns None (not an empty list) when the server could not be read, so the
+    completion monitor can tell "no torrents" from "unreachable".
+    """
     srv = server or STORE.current()
     if not srv:
-        return []
+        return None
     cli = client_for(srv)
     if isinstance(cli, TRClient):
-        return cli.torrents_info() or []
+        return cli.torrents_info()
     res = cli.api("GET", "/api/v2/torrents/info", timeout=NOTIFY_POLL_TIMEOUT)
     if res.status != 200:
-        return []
+        return None
     try:
         data = json.loads(res.text)
     except Exception:
-        return []
-    return data if isinstance(data, list) else []
+        return None
+    return data if isinstance(data, list) else None
 
 
 def human_size(num):
@@ -697,6 +724,8 @@ def drop_notify_server_state(sid):
     """Forget a removed server, so a re-added one starts from a clean slate."""
     if not sid:
         return
+    with NOTIFY_FAIL_LOCK:
+        NOTIFY_FAIL.pop(sid, None)
     with NOTIFY_STATE_LOCK:
         state = load_notify_state()
         buckets = state.get("servers")
@@ -765,13 +794,22 @@ def poll_completions():
     # network first, lock second: an unreachable server must never hold the
     # state lock (or the release check) hostage
     snaps = []
+    now = time.time()
     for srv in servers:
-        label = srv.get("name") or srv.get("url") or srv.get("id")
+        sid = srv.get("id") or ""
+        label = srv.get("name") or srv.get("url") or sid
+        if notify_fail_skip(sid, now):
+            continue
         try:
             items = torrents_snapshot(srv)
         except Exception as exc:
             log("notify snapshot failed [%s]: %r" % (label, exc))
+            items = None
+        if items is None:
+            notify_fail_note(sid, True, now)
+            log("notify skipped [%s]: 读取失败" % label)
             continue
+        notify_fail_note(sid, False, now)
         if items:
             snaps.append((srv, items))
     if not snaps:
