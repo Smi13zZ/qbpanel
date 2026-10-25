@@ -466,6 +466,9 @@ def check_update(force=False):
 # --------------------------------------------------------------------------
 NOTIFY_STATE_FILE = os.path.join(var_dir(), "notify-state.json")
 NOTIFY_STATE_LOCK = threading.Lock()
+# The completion monitor polls every server in turn, so one dead downloader
+# must not eat the whole cycle: keep each snapshot call short.
+NOTIFY_POLL_TIMEOUT = 12
 
 
 def default_notify_settings():
@@ -551,7 +554,7 @@ def clear_notify_log():
         save_notify_log([])
 
 
-def record_delivery(channel, title, body, event, res):
+def record_delivery(channel, title, body, event, res, server=""):
     """Append one delivery attempt. The message body is kept - that is the
     whole point of the record - but channel secrets never are: they live in
     config.json only."""
@@ -559,6 +562,7 @@ def record_delivery(channel, title, body, event, res):
         "id": uuid.uuid4().hex[:12],
         "at": int(time.time()),
         "event": event or "manual",
+        "server": str(server or "")[:80],
         "channel": channel.get("name") or channel.get("type") or "",
         "channel_id": channel.get("id") or "",
         "type": channel.get("type") or "",
@@ -576,7 +580,7 @@ def record_delivery(channel, title, body, event, res):
     return rec
 
 
-def dispatch(title, body, event=""):
+def dispatch(title, body, event="", server=""):
     """Fan a message out to every enabled channel."""
     cfg = notify_settings()
     results = []
@@ -586,7 +590,7 @@ def dispatch(title, body, event=""):
         if not ch.get("enabled", True):
             continue
         res = notify.send(ch, title, body)
-        record_delivery(ch, title, body, event, res)
+        record_delivery(ch, title, body, event, res, server)
         results.append({
             "id": ch.get("id") or "",
             "name": ch.get("name") or ch.get("type") or "",
@@ -619,14 +623,15 @@ def notify_update_event(info):
     )
 
 
-def torrents_snapshot():
-    srv = STORE.current()
+def torrents_snapshot(server=None):
+    """Torrent list of one server - the current one when none is given."""
+    srv = server or STORE.current()
     if not srv:
         return []
     cli = client_for(srv)
     if isinstance(cli, TRClient):
         return cli.torrents_info() or []
-    res = cli.api("GET", "/api/v2/torrents/info")
+    res = cli.api("GET", "/api/v2/torrents/info", timeout=NOTIFY_POLL_TIMEOUT)
     if res.status != 200:
         return []
     try:
@@ -648,50 +653,152 @@ def human_size(num):
     return "-"
 
 
-def poll_completions():
-    """Notify on the transition to 100% - torrents that were already complete
-    when the monitor started are recorded silently (no burst on first run)."""
-    cfg = notify_settings()
-    if not (cfg["enabled"] and cfg["on_complete"]):
+def notify_server_bucket(state, sid):
+    """Per-server seen/done bookkeeping.
+
+    The same torrent can exist on two servers (identical info hash), so a flat
+    map would let the first server's completion mask the second one's.
+    """
+    buckets = state.get("servers")
+    if not isinstance(buckets, dict):
+        buckets = {}
+        state["servers"] = buckets
+    bucket = buckets.get(sid)
+    if not isinstance(bucket, dict):
+        bucket = {}
+        buckets[sid] = bucket
+    if not isinstance(bucket.get("done"), dict):
+        bucket["done"] = {}
+    if not isinstance(bucket.get("seen"), dict):
+        bucket["seen"] = {}
+    return bucket
+
+
+def migrate_notify_state(state):
+    """<= 26.10.27 kept a flat done/seen map, and only for the current server.
+    Fold it into that server's bucket so nothing gets re-announced on upgrade."""
+    if isinstance(state.get("servers"), dict):
+        state.pop("done", None)
+        state.pop("seen", None)
         return
-    items = torrents_snapshot()
-    if not items:
+    done = state.pop("done", None)
+    seen = state.pop("seen", None)
+    if not (isinstance(done, dict) and isinstance(seen, dict)):
+        return
+    if not (done or seen):
+        return
+    srv = STORE.current() if STORE else None
+    sid = (srv or {}).get("id") or ""
+    if sid:
+        state["servers"] = {sid: {"done": done, "seen": seen}}
+
+
+def drop_notify_server_state(sid):
+    """Forget a removed server, so a re-added one starts from a clean slate."""
+    if not sid:
         return
     with NOTIFY_STATE_LOCK:
         state = load_notify_state()
-        done = state.get("done") or {}
-        seen = state.get("seen") or {}
-        changed = False
-        for t in items:
-            h = str(t.get("hash") or "")
-            if not h or h in done:
-                continue
-            if h not in seen:
-                # first sighting: remember it, but never notify yet
-                seen[h] = 1
-                changed = True
-                if float(t.get("progress") or 0) >= 0.999:
-                    done[h] = int(time.time())
-                continue
-            if float(t.get("progress") or 0) >= 0.999:
-                name = str(t.get("name") or h)
-                size = human_size(t.get("size") or t.get("total_size"))
-                path = str(t.get("save_path") or t.get("download_dir") or "")
-                dispatch(
-                    "下载完成：%s" % name,
-                    "%s\n%s" % (size, path) if path else size,
-                    event="complete",
-                )
-                done[h] = int(time.time())
-                seen.pop(h, None)
-                changed = True
-        if changed and len(done) > 500:
-            for k in sorted(done, key=lambda x: done[x])[:-400]:
-                done.pop(k, None)
-        if changed:
-            state["done"] = done
-            state["seen"] = seen
+        buckets = state.get("servers")
+        if isinstance(buckets, dict) and sid in buckets:
+            buckets.pop(sid, None)
             save_notify_state(state)
+
+
+def apply_completions(state, srv, items, multi, out):
+    """Fold one server's snapshot into the state and append finished events.
+
+    Torrents that are already complete when first seen are recorded silently,
+    so a first run (or a freshly added server) never fires a burst.
+    """
+    sid = srv.get("id") or ""
+    name = srv.get("name") or srv.get("url") or sid
+    bucket = notify_server_bucket(state, sid)
+    done = bucket["done"]
+    seen = bucket["seen"]
+    changed = False
+    for t in items:
+        h = str(t.get("hash") or "")
+        if not h or h in done:
+            continue
+        if h not in seen:
+            # first sighting: remember it, but never notify yet
+            seen[h] = 1
+            changed = True
+            if float(t.get("progress") or 0) >= 0.999:
+                done[h] = int(time.time())
+            continue
+        if float(t.get("progress") or 0) >= 0.999:
+            tname = str(t.get("name") or h)
+            size = human_size(t.get("size") or t.get("total_size"))
+            path = str(t.get("save_path") or t.get("download_dir") or "")
+            title = "下载完成：%s" % tname
+            body = "%s\n%s" % (size, path) if path else size
+            if multi:
+                # with more than one server the source has to be in the message
+                title = "[%s] %s" % (name, title)
+                body = "服务器：%s\n%s" % (name, body)
+            out.append((title, body, name))
+            done[h] = int(time.time())
+            seen.pop(h, None)
+            changed = True
+    if changed and len(done) > 500:
+        for k in sorted(done, key=lambda x: done[x])[:-400]:
+            done.pop(k, None)
+    return changed
+
+
+def poll_completions():
+    """Notify on the transition to 100% on every configured server.
+
+    The monitor is device wide: it is not tied to the server selected in the
+    top bar, otherwise a panel that manages several downloaders would stay
+    silent for all but one of them.
+    """
+    cfg = notify_settings()
+    if not (cfg["enabled"] and cfg["on_complete"]):
+        return
+    servers = [s for s in (STORE.servers() if STORE else []) if s.get("id")]
+    if not servers:
+        return
+
+    # network first, lock second: an unreachable server must never hold the
+    # state lock (or the release check) hostage
+    snaps = []
+    for srv in servers:
+        label = srv.get("name") or srv.get("url") or srv.get("id")
+        try:
+            items = torrents_snapshot(srv)
+        except Exception as exc:
+            log("notify snapshot failed [%s]: %r" % (label, exc))
+            continue
+        if items:
+            snaps.append((srv, items))
+    if not snaps:
+        return
+
+    multi = len(servers) > 1
+    events = []
+    with NOTIFY_STATE_LOCK:
+        state = load_notify_state()
+        migrate_notify_state(state)
+        changed = False
+        known = set(s.get("id") for s in servers)
+        for sid in list((state.get("servers") or {}).keys()):
+            if sid not in known:
+                state["servers"].pop(sid, None)
+                changed = True
+        for srv, items in snaps:
+            try:
+                if apply_completions(state, srv, items, multi, events):
+                    changed = True
+            except Exception as exc:
+                log("notify scan failed [%s]: %r" % (srv.get("name") or srv.get("id"), exc))
+        if changed:
+            save_notify_state(state)
+
+    for title, body, name in events:
+        dispatch(title, body, event="complete", server=name)
 
 
 def notify_thread():
@@ -1097,6 +1204,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.upsert_server(sid)
             elif method == "DELETE":
                 STORE.delete_server(sid)
+                drop_notify_server_state(sid)
                 self.send_json({"ok": True})
             else:
                 self.fail(405, "method not allowed")

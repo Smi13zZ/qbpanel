@@ -103,7 +103,7 @@ qBpanel 把 qBittorrent 与 Transmission 的网页管理界面，做成一个可
 ```bash
 # 把 fpk 传到设备上后执行（需要 sudo）
 printf 'wizard_backend_port=8898\n' > /tmp/qbpanel.env
-appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.27-fnos-all.fpk
+appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.28-fnos-all.fpk
 ```
 
 > 提示：`appcenter-cli` 安装时必须提供环境变量文件（`-e`），否则会报 `Something wrong with environment variables`；另外它**不会覆盖已安装的同名应用**，升级前需要先 `appcenter-cli uninstall fn-qbpanel`。

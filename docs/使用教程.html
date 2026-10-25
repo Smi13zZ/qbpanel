@@ -160,7 +160,7 @@
       <h1>qBpanel 使用教程</h1>
       <p class="sub">把 qBittorrent / Transmission 装进飞牛 fnOS 的桌面 —— 一个零依赖的 BitTorrent 控制面板，桌面与手机都好用。</p>
       <div class="badges">
-        <span class="badge p">版本 26.10.27</span>
+        <span class="badge p">版本 26.10.28</span>
         <span class="badge">飞牛 fnOS 原生应用（.fpk）</span>
         <span class="badge">x86 + ARM 通用</span>
         <span class="badge">Python 3 标准库 · Vue 3</span>
@@ -249,7 +249,7 @@
       <h3>方式二：命令行安装</h3>
       <pre><code># 把 fpk 传到设备上后执行
 printf 'wizard_backend_port=8898\n' &gt; /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.27-fnos-all.fpk</code></pre>
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.28-fnos-all.fpk</code></pre>
       <div class="callout warn">
         <b>两个小坑：</b>命令行安装必须提供环境变量文件（<code class="inl">-e</code>），否则会报
         <code class="inl">Something wrong with environment variables</code>；另外
@@ -381,8 +381,9 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.27-
       </table>
       <h3>通知</h3>
       <p>「设置 → 通知」里配置提醒：先在「通知渠道」里点「添加渠道」，选择 Bark、Server 酱、PushPlus、WxPusher 或自定义 Webhook，填好对应凭据即可；添加后可以点「测试」立刻验证是否送达。密钥只保存在设备本地，保存后不会回显。</p>
-      <p>提醒事件各有开关：<b>任务下载完成</b>（进度到 100% 时推送一次，同一条任务只发一次）、<b>版本更新</b>（发现新版本推一次，同一版本不重复）。</p>
-      <p><b>投递记录</b>：渠道卡片下面会列出每一次推送，成功失败都记一条，写明渠道、事件（下载完成 / 版本更新 / 测试）、时间、推送的标题与正文；失败还会附上原因，例如 HTTP 状态码、超时或目标拒绝连接。可以按「全部 / 成功 / 失败」筛选，也能手动刷新或清空。记录只存在设备本地（<code class="inl">notify-log.json</code>），最多保留最近 200 条，不含任何渠道密钥。</p>
+      <p>提醒事件各有开关：<b>任务下载完成</b>（任一服务器的任务进度到 100% 时推送一次，同一条任务只发一次，多台服务器会在标题与正文里标出是哪一台）、<b>版本更新</b>（发现新版本推一次，同一版本不重复）。</p>
+      <p>通知是<b>整机范围</b>的设置：只要服务器加进了面板，不论顶栏当前选的是哪一台，下载完成都会推送。新加的服务器第一次读到的任务只做记录、不会补发提醒，所以不会一加进就收到一堆历史完成通知。</p>
+      <p><b>投递记录</b>：渠道卡片下面会列出每一次推送，成功失败都记一条，写明渠道、来源服务器、事件（下载完成 / 版本更新 / 测试）、时间、推送的标题与正文；失败还会附上原因，例如 HTTP 状态码、超时或目标拒绝连接。可以按「全部 / 成功 / 失败」筛选，也能手动刷新或清空。记录只存在设备本地（<code class="inl">notify-log.json</code>），最多保留最近 200 条，不含任何渠道密钥。</p>
 
       <h3>版本更新</h3>
       <p>面板启动后会查询一次项目发布页上的最新版本，并按需手动刷新。发现新版本时，侧栏的「设置」会打一个小红点，并且<b>每个页面顶部都会出现提示条</b>，可以直接点「一键更新」。</p>
@@ -484,7 +485,7 @@ sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.27-
 </div>
 
 <footer class="wrap">
-  qBpanel 26.10.27 · MIT License © 2026 Smi13zZ · 与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
+  qBpanel 26.10.28 · MIT License © 2026 Smi13zZ · 与 qBittorrent、Transmission、飞牛 fnOS 官方均无隶属关系。
 </footer>
 
 </body>

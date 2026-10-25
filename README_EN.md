@@ -102,7 +102,7 @@ Mobile (390px):
 
 ```bash
 printf 'wizard_backend_port=8898\n' > /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.27-fnos-all.fpk
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.10.28-fnos-all.fpk
 ```
 
 > Two gotchas: the `-e` env file is **mandatory**, otherwise you get
