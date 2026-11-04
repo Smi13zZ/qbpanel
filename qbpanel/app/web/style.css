@@ -690,9 +690,14 @@ input[type="number"] { -moz-appearance: textfield; }
    other with only a newline between them, and Vue's in-DOM template compiler
    drops whitespace-only text nodes that contain a newline - so the desktop log
    column rendered "2026-11-0320:44" with date and time jammed together. Making
-   .t a flex container with an explicit gap puts the space back and keeps the
-   fixed 148px column (16 mono chars + gap still fits). */
-.logline .t { color: var(--faint); flex: 0 0 148px; display: flex; align-items: baseline; gap: 6px; }
+   .t a flex container with an explicit gap puts the space back.
+   The column used to be pinned to 148px, but the timestamp only ever measures
+   15 mono chars (~105-114px at 12px), so 30-43px of the column was dead space
+   sitting between the time and the message - the 12px gap on .logline was
+   really ~50px on screen. flex-basis:auto sizes the column to the text, which
+   still lines every row up (the timestamp is fixed-width by construction) and
+   makes that 12px gap mean 12px again. */
+.logline .t { color: var(--faint); flex: 0 0 auto; min-width: calc(15ch + 6px); display: flex; align-items: baseline; gap: 6px; }
 .logline.warn .m { color: var(--warn); }
 .logline.err .m { color: var(--danger); }
 
