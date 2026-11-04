@@ -531,9 +531,16 @@ input[type="number"] { -moz-appearance: textfield; }
 .kv dd { margin: 0; word-break: break-all; font-variant-numeric: tabular-nums; }
 
 /* Release notes arrive as plain text - keep the line breaks, wrap long links,
-   and cap the height so a chatty changelog cannot stretch the card. */
+   and cap the height so a chatty changelog cannot stretch the card.
+   The cap is expressed in whole lines on purpose: a scroll container's visible
+   band ends at its border-box bottom, so padding-bottom is NOT subtracted from
+   what you can see. With a flat max-height the band ended up 12.5 lines tall and
+   the 13th line was sliced through the middle at the bottom edge. 13 lines of
+   20px + 10px top padding = 270px keeps the last visible row whole. */
 .relnotes {
-  max-height: 260px; overflow: auto; overscroll-behavior: contain;
+  --relnotes-line: 20px;
+  max-height: calc(13 * var(--relnotes-line) + 10px); /* top padding */
+  overflow: auto; overscroll-behavior: contain;
   padding: 10px 12px; border-radius: var(--radius);
   background: var(--muted); color: var(--dim);
   font-size: 12.5px; line-height: 1.6;
