@@ -668,44 +668,70 @@ input[type="number"] { -moz-appearance: textfield; }
 }
 
 /* ---------------- one-click update overlay ---------------- */
+/* 居中卡片 + 旋转图标；进度条放在阶段说明下面，跟着下载走。 */
 .upoverlay {
   position: fixed; inset: 0; z-index: 95; padding: 20px;
   background: rgba(0, 0, 0, .5); display: grid; place-items: center;
 }
 .upoverlay-box {
-  width: min(400px, 100%); padding: 26px 22px; text-align: center;
+  /* 固定宽度：内容（阶段文字、大小、百分比）在各阶段长短不同，
+     用 min() 让宽度跟随内容会让弹窗忽大忽小。 */
+  width: min(400px, 100%); min-height: 208px;
+  padding: 26px 22px; text-align: center;
+  /* align-items:center 不能省：改成 flex 列之后，子项默认 stretch，
+     旋转图标会被拉成整行宽、靠左摆放。 */
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
   background: var(--bg); border: 1px solid var(--border);
   border-radius: var(--radius-lg); box-shadow: var(--shadow-pop);
 }
-.upspin { display: inline-flex; color: var(--text); }
-.upspin svg { animation: qbspin 1s linear infinite; }
+.upspin { flex: 0 0 auto; width: 26px; height: 26px; display: flex; color: var(--text); }
+.upspin svg { width: 26px; height: 26px; animation: qbspin 1s linear infinite; }
 @keyframes qbspin { to { transform: rotate(360deg); } }
-.uptitle { font-size: 15px; font-weight: 600; margin: 12px 0 6px; }
-
-/* Progress bar inside the update overlay. The determinate fill is driven by the
-   byte counters the backend reports while downloading; without a Content-Length
-   (or during the install phase, where there is nothing to measure) it falls
-   back to an indeterminate stripe rather than inventing a percentage. */
+.uptitle { font-size: 15px; font-weight: 600; margin: 12px 0 6px; text-align: center; }
+.upstage {
+  font-size: 12.5px; color: var(--dim); overflow-wrap: anywhere; text-align: center;
+  /* 阶段文字换行数不同（「正在下载安装包…」vs「安装包已就绪，正在重启服务…」），
+     预留两行高度，避免切换阶段时整块上下跳。 */
+  min-height: 34px; line-height: 17px;
+}
+/* 进度区：两种形态共用同一块固定高度的空间，
+   所以从「下载中」切到「准备中」时弹窗不会变高变矮。 */
+.upprog-block {
+  width: 100%; align-self: stretch;
+  /* 6px 条 + 7px 间距 + 17px 文字行 = 30px，固定住 */
+  height: 30px; margin-top: 14px;
+  display: flex; flex-direction: column; justify-content: flex-start;
+}
+/* 进度条显式拉满：align-items:center 会让子项按内容宽度收缩，
+   不写宽度就会塌成 0，看起来像「进度条不见了」。 */
 .upprog {
-  position: relative; height: 6px; margin: 14px auto 0; width: 100%;
+  position: relative; height: 6px; width: 100%;
   border-radius: 999px; background: var(--muted); overflow: hidden;
+  flex: 0 0 auto;
 }
 .upprog-fill {
   height: 100%; width: 0; border-radius: 999px;
   background: var(--primary); transition: width .25s ease;
 }
-.upprog.indet .upprog-fill {
-  width: 38%; background: var(--faint);
-  animation: upprogslide 1.15s ease-in-out infinite;
-}
-@keyframes upprogslide {
-  0%   { transform: translateX(-105%); }
-  100% { transform: translateX(275%); }
-}
 .upprog-meta {
-  display: flex; justify-content: space-between; gap: 10px;
+  /* 居中而不是两端对齐：百分比和已下载/总量放一起居中显示 */
+  display: flex; justify-content: center; align-items: baseline; gap: 10px;
   margin-top: 7px; font-size: 11.5px; color: var(--faint);
   font-variant-numeric: tabular-nums;
+  width: 100%; min-height: 17px;
+}
+/* 百分比只换颜色和字重，字号跟前面的已下载大小保持一致（都继承父级 11.5px） */
+.upmeta-pct { color: var(--text); font-weight: 600; }
+/* 准备中：没有进度条，文字在整块 30px 空间里上下正中 */
+.upprog-ready {
+  flex: 1 1 auto;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; color: var(--faint);
+}
+.upkeep {
+  margin-top: 10px; font-size: 11.5px; color: var(--faint);
+  /* 固定占位：失败时这行会换文案，避免弹窗高度跳 */
+  min-height: 16px;
 }
 
 /* ---------------- toasts / log ---------------- */

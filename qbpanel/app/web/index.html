@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.8">
+<link rel="stylesheet" href="./style.css?v=26.11.9">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -1354,29 +1354,35 @@
   </div>
 </div>
 
-<!-- ================= one-click update overlay ================= -->
+<!-- ================= one-click update overlay =================
+     升级要卸载重装面板，页面必然短暂失联。这个弹窗不能关，一直显示到新版本
+     回来为止，避免用户以为卡住而手动重进。 -->
 <div class="upoverlay" v-if="updateInstalling">
   <div class="upoverlay-box">
     <span class="upspin" v-html="ic('refresh')"></span>
-    <div class="uptitle">{{ t('update.installingTitle', { v: updateInstallVersion }) }}</div>
-    <div class="dim">{{ updateInstallDetail || t('update.installingHint') }}</div>
+    <div class="uptitle">{{ updateInstallVersion ? t('update.installingTitle', { v: updateInstallVersion }) : t('update.installing') }}</div>
+    <div class="upstage">{{ updateInstallDetail || t('update.hint') }}</div>
 
-    <!-- Progress bar. While downloading we know the real byte count, so it is a
-         determinate bar with a percentage; every other phase (installing,
-         waiting for the service to come back) has no measurable total, so the
-         bar switches to an indeterminate stripe instead of faking a number. -->
-    <div class="upprog" :class="{ indet: !updateProgressKnown }">
-      <div class="upprog-fill" :style="updateProgressKnown ? { width: updateProgressPct + '%' } : null"></div>
-    </div>
-    <div class="upprog-meta">
-      <span v-if="updateProgressKnown">{{ updateProgressPct }}%</span>
-      <span v-else>{{ t('update.progressUnknown') }}</span>
-      <span v-if="updateProgressKnown && updateProgressTotal">
-        {{ fmt.fmtBytes(updateProgressDone) }} / {{ fmt.fmtBytes(updateProgressTotal) }}
-      </span>
+    <!-- 进度区：两种形态共用同一块固定高度的空间，所以从「下载中」切到
+         「准备中」时弹窗不会变高变矮。下载阶段有真实字节数 → 进度条 +
+       百分比 + 已下载/总量；其余阶段没有可测总量 → 不画进度条，只把
+        「准备中…」放在这块空间正中间，不假装有百分比。 -->
+    <div class="upprog-block">
+      <template v-if="updateProgressKnown">
+        <div class="upprog">
+          <div class="upprog-fill" :style="{ width: updateProgressPct + '%' }"></div>
+        </div>
+        <div class="upprog-meta">
+          <span class="upmeta-size" v-if="updateProgressTotal">
+            {{ fmt.fmtBytes(updateProgressDone) }} / {{ fmt.fmtBytes(updateProgressTotal) }}
+          </span>
+          <span class="upmeta-pct">{{ updateProgressPct }}%</span>
+        </div>
+      </template>
+      <div class="upprog-ready" v-else>{{ t('update.progressUnknown') }}</div>
     </div>
 
-    <div class="hint" style="margin-top:10px">{{ t('update.installingWait') }}</div>
+    <div class="upkeep">{{ t('update.keepOpen') }}</div>
   </div>
 </div>
 
@@ -1402,10 +1408,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.11.8"></script>
-<script src="./js/util.js?v=26.11.8"></script>
-<script src="./js/api.js?v=26.11.8"></script>
-<script src="./js/charts.js?v=26.11.8"></script>
-<script src="./js/app.js?v=26.11.8"></script>
+<script src="./js/i18n.js?v=26.11.9"></script>
+<script src="./js/util.js?v=26.11.9"></script>
+<script src="./js/api.js?v=26.11.9"></script>
+<script src="./js/charts.js?v=26.11.9"></script>
+<script src="./js/app.js?v=26.11.9"></script>
 </body>
 </html>

@@ -161,10 +161,11 @@
         updateBanner: true,
         updateInstalling: false,
         updateInstallVersion: "",
-      updateProgressDone: 0,
-      updateProgressTotal: 0,
+        updateProgressDone: 0,
+        updateProgressTotal: 0,
+        updateInstallPhase: "",
         updateInstallDetail: "",
-        installTimer: null,
+        updateTimer: null,
 
         /* notifications */
         notifyCfg: { enabled: false, on_complete: true, on_update: true },
@@ -1385,94 +1386,106 @@ serverName: function () {
           },
         };
       },
+      /* 一键更新：面板在后台下载 + 校验 + 生成升级脚本，这里轮询进度。
+         弹窗一直留着，直到面板被新版本替换、页面自动重连成功为止。 */
       runInstall: async function () {
+        if (this.updateInstalling) return;
         this.updateInstalling = true;
-        this.updateInstallVersion = this.updateInfo ? this.updateInfo.latest : "";
-        this.updateInstallDetail = this.t("update.downloading");
         this.updateError = "";
         this.updateProgressDone = 0;
         this.updateProgressTotal = 0;
-        /* pollStatus()/installUpdate() are independent of each other: the
-           install request blocks for as long as the download lasts, so the
-           progress has to come from a second request that reads the server's
-           phase counters while the first one is still open. */
-        this.pollProgress();
+        this.updateInstallPhase = "downloading";
+        this.updateInstallDetail = this.t("update.downloading");
+        this.updateInstallVersion = (this.updateInfo && this.updateInfo.latest) || "";
+        this._updateFromVersion = this.appVersion;
+        /* 轮询必须先起来，再发安装请求：后端是在这个请求里同步下载安装包的，
+           await 会一直挂到下载结束，等它返回才转向询的话，下载阶段一个进度都
+           看不到。 */
+        this.pollUpdateProgress(this._updateFromVersion);
         try {
           const r = await API.installUpdate();
-          if (!r || !r.ok) throw new Error((r && r.error) || "install failed");
-          /* The download finishes while installUpdate() is still blocking, and
-             the 400ms poll can easily miss the last chunk - without this final
-             read the bar would freeze a few percent short and jump straight to
-             the install phase. One sync here makes it land on 100%. */
-          await this.syncProgress();
-          this.updateInstallDetail = this.t("update.restarting");
-          this.pollAfterInstall();
+          if (r && r.ok === false) throw new Error((r && r.error) || "install failed");
+          if (r && r.phase) this.applyUpdateState(r);
         } catch (e) {
-          await this.syncProgress();
-          clearInterval(this.progressTimer);
+          clearTimeout(this.updateTimer);
           this.updateInstalling = false;
-          this.updateError = this.t("update.installFailed", { v: e.message });
+          this.updateError = this.t("update.installFailed", { v: (e && e.message) || "" });
         }
       },
-      /* One-shot read of the server's progress counters, used to settle the bar
-         on its true final value before the polling loop is torn down. */
-      syncProgress: async function () {
-        try {
-          const st = await API.updateStatus();
-          if (!st) return;
-          if (typeof st.done === "number") this.updateProgressDone = st.done;
-          if (typeof st.total === "number") this.updateProgressTotal = st.total;
-        } catch (e) {
-          /* the panel may already be restarting - keep the last known value */
+      /* 服务端进度是瞬时快照，网速快时两次轮询之间能差几十个百分点。
+         显示值只增不减，避免进度条回头跳。阶段决定文案：下载 → 安装包就绪
+         重启服务 → 等待新版本上线。进入安装/重启后总量不再有意义，把 total
+         清零让进度区切成「准备中」，不假装还有百分比。 */
+      applyUpdateState: function (st) {
+        if (!st) return;
+        const prevPct = this.updateProgressPct;
+        const phase = st.phase || "downloading";
+        this.updateInstallPhase = phase;
+        if (typeof st.done === "number") this.updateProgressDone = Math.max(this.updateProgressDone || 0, st.done);
+        if (typeof st.total === "number") this.updateProgressTotal = st.total;
+        if (st.detail) this.updateInstallDetail = st.detail;
+        if (phase === "downloading") {
+          this.updateInstallDetail = this.t("update.downloading");
+        } else if (phase === "installing") {
+          this.updateInstallDetail = this.t("update.restarting");
+          this.updateProgressTotal = 0;
+        }
+        /* 阶段文案由服务端 detail 覆盖时也要保证百分比不回退 */
+        if (this.updateProgressPct < prevPct) {
+          this.updateProgressDone = Math.round(prevPct / 100 * (this.updateProgressTotal || 0));
         }
       },
-      /* Reads /api/update/status every 400ms while the install request is in
-         flight, so the bar tracks the download instead of sitting at 0. */
-      pollProgress: function () {
+      pollUpdateProgress: function (fromVersion) {
         const self = this;
-        clearInterval(this.progressTimer);
-        this.progressTimer = setInterval(async function () {
+        let misses = 0;
+        clearTimeout(this.updateTimer);
+        const tick = async function () {
+          /* 面板被卸载/重启期间接口会连续失败若干次，这是升级的正常过程，
+             不能一失败就当出错 —— 只要它还会回来，就继续等。 */
           try {
             const st = await API.updateStatus();
-            if (!st) return;
-            if (st.detail) self.updateInstallDetail = st.detail;
-            if (typeof st.done === "number") self.updateProgressDone = st.done;
-            if (typeof st.total === "number") self.updateProgressTotal = st.total;
-          } catch (e) {
-            /* server may already be restarting - ignore and keep polling */
-          }
-        }, 400);
-      },
-      /* The installer stops this very service, so the page keeps polling the
-         health endpoint until a different version answers, then reloads. */
-      pollAfterInstall: function () {
-        const self = this;
-        const oldVersion = this.appVersion;
-        let tries = 0;
-        clearInterval(this.progressTimer);
-        clearInterval(this.installTimer);
-        this.installTimer = setInterval(async function () {
-          tries += 1;
-          try {
-            const h = await API.health();
-            if (h && h.version && h.version !== oldVersion) {
-              clearInterval(self.installTimer);
-              self.updateInstallDetail = self.t("update.done", { v: h.version });
-              setTimeout(function () { location.reload(); }, 900);
+            misses = 0;
+            if (st && st.phase === "failed") {
+              self.updateInstalling = false;
+              self.updateError = self.t("update.installFailed", { v: st.detail || "" });
+              return;
+            }
+            self.applyUpdateState(st);
+            /* 新版本已上线：面板报告的版本号不再是安装前那个。
+               用「与起始版本不同」判断，比精确匹配目标版本号更耐得住
+               tag 带前缀或资产名与版本号不完全一致的情况。 */
+            if (st && st.current && fromVersion && st.current !== fromVersion) {
+              self.finishUpdate(st.current);
               return;
             }
           } catch (e) {
-            /* expected: the panel is down while appcenter reinstalls it */
+            misses += 1;
+            if (misses > 180) {
+              self.updateInstalling = false;
+              self.updateError = self.t("update.installFailed", { v: self.t("update.installTimeout") });
+              return;
+            }
           }
-          if (tries === 15) self.updateInstallDetail = self.t("update.installingHint");
-          if (tries > 100) {
-            clearInterval(self.installTimer);
-            self.updateInstalling = false;
-            self.updateError = self.t("update.installTimeout");
-          }
-        }, 2000);
+          /* 400ms 轮询：更新包不大，在千兆内网不到 1 秒就下完，
+             间隔太长只能抓到一两个中间值，看起来像「直接跳到完成」。 */
+          self.updateTimer = setTimeout(tick, 400);
+        };
+        this.updateTimer = setTimeout(tick, 400);
       },
-
+      /* 新版本装好了：进度拉满、给个提示，然后整体重新加载页面。
+         面板在升级过程中被卸载重装，前端内存状态（版本号、设置、路由）
+         都还是旧的，只刷新数据不够 —— 重载一次让页面跑在新版本上。 */
+      finishUpdate: function (version) {
+        const self = this;
+        this.updateProgressTotal = 100;
+        this.updateProgressDone = 100;
+        this.updateInstallPhase = "done";
+        this.updateInstallDetail = this.t("update.done", { v: version || "" });
+        setTimeout(function () {
+          self.updateInstalling = false;
+          location.reload();
+        }, 1500);
+      },
       /* ---------------- notifications ---------------- */
       loadNotify: async function () {
         try {
