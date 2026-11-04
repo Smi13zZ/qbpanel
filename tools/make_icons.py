@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Generate qbpanel application icons (rounded blue tile + download glyph)."""
+"""Generate qbpanel application icons (rounded dark tile + download glyph).
+
+Sizes matter: the fnOS app centre asks for a different icon size depending on
+device and pixel density (system apps ship 16/24/48/64/72/96/128/256/512 - nine
+steps). Shipping only 64 and 256 left the tile blank on phones, which request
+72/96/128. ui/config points at "images/icon_{0}.png" and the app centre replaces
+{0} with the size it wants, so every step has to exist on disk.
+"""
 import os
 from PIL import Image, ImageDraw
 
@@ -10,6 +17,9 @@ ROOT = os.path.join(
 GRAD = ((34, 34, 34, 255), (44, 44, 44, 255), (10, 10, 10, 255), (18, 18, 18, 255))
 WHITE = (255, 255, 255, 255)
 LIGHT = (163, 163, 163, 255)
+
+# 应用中心在不同设备/设备密度下会请求不同尺寸（实测系统应用提供这九档）
+UI_SIZES = [16, 24, 48, 64, 72, 96, 128, 256, 512]
 
 
 def build(size):
@@ -48,18 +58,28 @@ def save(img, *parts):
     path = os.path.join(ROOT, *parts)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path, "PNG", optimize=True)
-    print("wrote", path, img.size)
+    print("  %-46s %dx%d %7d B" % (os.path.relpath(path, ROOT), img.width, img.height,
+                                   os.path.getsize(path)))
 
 
 def main():
-    big = build(256)
-    small = build(64)
-    save(big, "ICON_256.PNG")
-    save(small, "ICON.PNG")
-    save(big, "app", "ui", "images", "ICON_256.PNG")
-    save(small, "app", "ui", "images", "ICON.PNG")
-    save(small, "app", "ui", "images", "ICON_64.PNG")
-    save(build(128), "app", "web", "images", "icon.png")
+    print("== qbpanel 图标 ==")
+    # 外层 ICON.PNG / ICON_256.PNG 是 fnpack 要求的固定名字
+    save(build(256), "ICON_256.PNG")
+    save(build(64), "ICON.PNG")
+    save(build(256), "app", "ui", "images", "ICON_256.PNG")
+    save(build(64), "app", "ui", "images", "ICON.PNG")
+    save(build(64), "app", "ui", "images", "ICON_64.PNG")
+
+    # ui/config 里写的是 "images/icon_{0}.png"，应用中心把 {0} 换成实际尺寸
+    for s in UI_SIZES:
+        save(build(s), "app", "ui", "images", "icon_%d.png" % s)
+
+    # 占位符原样留一份，兼容把 {0} 当字面量的实现
+    save(build(512), "app", "ui", "images", "icon_{0}.png")
+
+    # web favicon
+    save(build(192), "app", "web", "images", "icon.png")
 
 
 if __name__ == "__main__":

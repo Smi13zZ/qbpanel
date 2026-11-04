@@ -161,6 +161,9 @@
         updateBanner: true,
         updateInstalling: false,
         updateInstallVersion: "",
+      updateProgressDone: 0,
+      updateProgressTotal: 0,
+      updateInstallPhase: "",
         updateInstallDetail: "",
         installTimer: null,
 
@@ -196,6 +199,23 @@
     },
 
     computed: {
+      /* Progress bar state. A percentage is only shown when the server told us
+         the total size; otherwise the overlay uses an indeterminate stripe. */
+      updateProgressKnown: function () {
+        return this.updateProgressTotal > 0;
+      },
+      /* The release package is only ~190 KB, so the whole transfer can finish
+         between two polls and the bar would jump 0 -> 100 with nothing visible.
+         Hold it at 99 while the download phase is still running so the
+         transition always shows movement; a genuine 100 only appears once the
+         server has moved on to the install phase. */
+      updateProgressPct: function () {
+        if (!this.updateProgressTotal) return 0;
+        const raw = (this.updateProgressDone / this.updateProgressTotal) * 100;
+        const clamped = Math.max(0, Math.min(100, raw));
+        if (clamped >= 100 && this.updateInstallPhase === "downloading") return 99;
+        return Math.round(clamped);
+      },
       navItems: function () {
         const t = this.t;
         return [
@@ -1375,15 +1395,42 @@ serverName: function () {
         this.updateInstallVersion = this.updateInfo ? this.updateInfo.latest : "";
         this.updateInstallDetail = this.t("update.downloading");
         this.updateError = "";
+        this.updateProgressDone = 0;
+        this.updateProgressTotal = 0;
+        this.updateInstallPhase = "downloading";
+        /* pollStatus()/installUpdate() are independent of each other: the
+           install request blocks for as long as the download lasts, so the
+           progress has to come from a second request that reads the server's
+           phase counters while the first one is still open. */
+        this.pollProgress();
         try {
           const r = await API.installUpdate();
           if (!r || !r.ok) throw new Error((r && r.error) || "install failed");
           this.updateInstallDetail = this.t("update.restarting");
           this.pollAfterInstall();
         } catch (e) {
+          clearInterval(this.progressTimer);
           this.updateInstalling = false;
           this.updateError = this.t("update.installFailed", { v: e.message });
         }
+      },
+      /* Reads /api/update/status every 400ms while the install request is in
+         flight, so the bar tracks the download instead of sitting at 0. */
+      pollProgress: function () {
+        const self = this;
+        clearInterval(this.progressTimer);
+        this.progressTimer = setInterval(async function () {
+          try {
+            const st = await API.updateStatus();
+            if (!st) return;
+            if (st.detail) self.updateInstallDetail = st.detail;
+            if (st.phase) self.updateInstallPhase = st.phase;
+            if (typeof st.done === "number") self.updateProgressDone = st.done;
+            if (typeof st.total === "number") self.updateProgressTotal = st.total;
+          } catch (e) {
+            /* server may already be restarting - ignore and keep polling */
+          }
+        }, 400);
       },
       /* The installer stops this very service, so the page keeps polling the
          health endpoint until a different version answers, then reloads. */
@@ -1391,6 +1438,7 @@ serverName: function () {
         const self = this;
         const oldVersion = this.appVersion;
         let tries = 0;
+        clearInterval(this.progressTimer);
         clearInterval(this.installTimer);
         this.installTimer = setInterval(async function () {
           tries += 1;

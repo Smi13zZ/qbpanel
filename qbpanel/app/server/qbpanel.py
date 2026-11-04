@@ -858,11 +858,12 @@ def notify_thread():
 # rollback before anything is uninstalled.
 # --------------------------------------------------------------------------
 UPDATE_DIR = os.path.join(var_dir(), "update")
-UPDATE_STATE = {"phase": "idle", "version": "", "detail": "", "at": 0}
+UPDATE_STATE = {"phase": "idle", "version": "", "detail": "", "at": 0,
+                "done": 0, "total": 0}
 UPDATE_LOCK = threading.Lock()
 
 
-def _set_update(phase, version="", detail=""):
+def _set_update(phase, version="", detail="", done=None, total=None):
     with UPDATE_LOCK:
         UPDATE_STATE.update({
             "phase": phase,
@@ -870,6 +871,14 @@ def _set_update(phase, version="", detail=""):
             "detail": detail,
             "at": int(time.time()),
         })
+        # Byte counters drive the progress bar. A new download seeds them to 0/0
+        # and the download loop fills them in; later phases (installing, failed)
+        # leave them at whatever the download ended on, so the bar keeps showing
+        # 100% while the install runs instead of snapping back to empty.
+        if done is not None:
+            UPDATE_STATE["done"] = int(done)
+        if total is not None:
+            UPDATE_STATE["total"] = int(total)
 
 
 def update_status():
@@ -896,11 +905,21 @@ def pick_fpk_asset(info):
     return fpks[0] if fpks else None
 
 
-def download_file(url, dest, limit=128 * 1024 * 1024):
+def download_file(url, dest, limit=128 * 1024 * 1024, on_progress=None):
     req = urllib.request.Request(url, headers={"User-Agent": "qBpanel/" + VERSION})
     ctx = ssl.create_default_context()
     total = 0
     with urllib.request.urlopen(req, timeout=180, context=ctx) as resp, open(dest, "wb") as f:
+        # GitHub serves a Content-Length for release assets, so the browser can
+        # show a real percentage instead of an endless spinner. It can be absent
+        # (chunked replies), in which case total stays 0 and the UI falls back to
+        # an indeterminate bar.
+        try:
+            expect = int(resp.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            expect = 0
+        if on_progress:
+            on_progress(0, expect)
         while True:
             chunk = resp.read(256 * 1024)
             if not chunk:
@@ -909,6 +928,8 @@ def download_file(url, dest, limit=128 * 1024 * 1024):
             if total > limit:
                 raise ValueError("安装包超过 %d MB，已中止" % (limit // 1024 // 1024))
             f.write(chunk)
+            if on_progress:
+                on_progress(total, expect)
     return total
 
 
@@ -1027,9 +1048,14 @@ def start_update():
         return {"ok": False, "error": "无法创建下载目录：%s" % exc}
     name = os.path.basename(asset["name"]) or "qBpanel-update.fpk"
     dest = os.path.join(UPDATE_DIR, name)
-    _set_update("downloading", info["latest"], "正在下载 %s" % name)
+    _set_update("downloading", info["latest"], "正在下载 %s" % name, done=0, total=0)
+
+    def _on_dl(done, total):
+        _set_update("downloading", info["latest"], "正在下载 %s" % name,
+                    done=done, total=total)
+
     try:
-        download_file(asset["url"], dest)
+        download_file(asset["url"], dest, on_progress=_on_dl)
         validate_fpk(dest)
     except Exception as exc:
         _set_update("failed", info["latest"], str(exc))

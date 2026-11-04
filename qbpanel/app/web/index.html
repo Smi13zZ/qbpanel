@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.2">
+<link rel="stylesheet" href="./style.css?v=26.11.3">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -1360,6 +1360,22 @@
     <span class="upspin" v-html="ic('refresh')"></span>
     <div class="uptitle">{{ t('update.installingTitle', { v: updateInstallVersion }) }}</div>
     <div class="dim">{{ updateInstallDetail || t('update.installingHint') }}</div>
+
+    <!-- Progress bar. While downloading we know the real byte count, so it is a
+         determinate bar with a percentage; every other phase (installing,
+         waiting for the service to come back) has no measurable total, so the
+         bar switches to an indeterminate stripe instead of faking a number. -->
+    <div class="upprog" :class="{ indet: !updateProgressKnown }">
+      <div class="upprog-fill" :style="updateProgressKnown ? { width: updateProgressPct + '%' } : null"></div>
+    </div>
+    <div class="upprog-meta">
+      <span v-if="updateProgressKnown">{{ updateProgressPct }}%</span>
+      <span v-else>{{ t('update.progressUnknown') }}</span>
+      <span v-if="updateProgressKnown && updateProgressTotal">
+        {{ fmt.fmtBytes(updateProgressDone) }} / {{ fmt.fmtBytes(updateProgressTotal) }}
+      </span>
+    </div>
+
     <div class="hint" style="margin-top:10px">{{ t('update.installingWait') }}</div>
   </div>
 </div>
@@ -1386,10 +1402,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.11.2"></script>
-<script src="./js/util.js?v=26.11.2"></script>
-<script src="./js/api.js?v=26.11.2"></script>
-<script src="./js/charts.js?v=26.11.2"></script>
-<script src="./js/app.js?v=26.11.2"></script>
+<script src="./js/i18n.js?v=26.11.3"></script>
+<script src="./js/util.js?v=26.11.3"></script>
+<script src="./js/api.js?v=26.11.3"></script>
+<script src="./js/charts.js?v=26.11.3"></script>
+<script src="./js/app.js?v=26.11.3"></script>
 </body>
 </html>

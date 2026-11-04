@@ -682,6 +682,32 @@ input[type="number"] { -moz-appearance: textfield; }
 @keyframes qbspin { to { transform: rotate(360deg); } }
 .uptitle { font-size: 15px; font-weight: 600; margin: 12px 0 6px; }
 
+/* Progress bar inside the update overlay. The determinate fill is driven by the
+   byte counters the backend reports while downloading; without a Content-Length
+   (or during the install phase, where there is nothing to measure) it falls
+   back to an indeterminate stripe rather than inventing a percentage. */
+.upprog {
+  position: relative; height: 6px; margin: 14px auto 0; width: 100%;
+  border-radius: 999px; background: var(--muted); overflow: hidden;
+}
+.upprog-fill {
+  height: 100%; width: 0; border-radius: 999px;
+  background: var(--primary); transition: width .25s ease;
+}
+.upprog.indet .upprog-fill {
+  width: 38%; background: var(--faint);
+  animation: upprogslide 1.15s ease-in-out infinite;
+}
+@keyframes upprogslide {
+  0%   { transform: translateX(-105%); }
+  100% { transform: translateX(275%); }
+}
+.upprog-meta {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 7px; font-size: 11.5px; color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------- toasts / log ---------------- */
 .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; }
 .toast {

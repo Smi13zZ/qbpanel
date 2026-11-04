@@ -9,7 +9,7 @@
       },
       "protocol": "http",
       "title": "qBpanel",
-      "icon": "images/ICON_256.PNG",
+      "icon": "images/icon_{0}.png",
       "type": "iframe",
       "url": "/cgi/ThirdParty/fn-qbpanel/index.cgi/"
     }
