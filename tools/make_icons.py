@@ -67,9 +67,11 @@ def main():
     # 外层 ICON.PNG / ICON_256.PNG 是 fnpack 要求的固定名字
     save(build(256), "ICON_256.PNG")
     save(build(64), "ICON.PNG")
-    save(build(256), "app", "ui", "images", "ICON_256.PNG")
-    save(build(64), "app", "ui", "images", "ICON.PNG")
-    save(build(64), "app", "ui", "images", "ICON_64.PNG")
+    # NOTE: do not also write app/ui/images/ICON*.PNG here. On a
+    # case-insensitive filesystem (Windows) "icon_64.png" and "ICON_64.PNG" are
+    # the same file, so those writes silently swallow the sized icons and the
+    # package ends up missing icon_64/icon_256. app/ui only ships the lowercase
+    # sized set that ui/config's icon_{0}.png placeholder resolves against.
 
     # ui/config 里写的是 "images/icon_{0}.png"，应用中心把 {0} 换成实际尺寸
     for s in UI_SIZES:

@@ -13,6 +13,7 @@
   * 外层与内层的关键文件都在
   * manifest 里的 version 与文件名里的版本号一致
   * cmd/* 与 app.tgz 里的 ui/index.cgi 带可执行位
+  * ui/config 的 icon 占位符，能在包里找到它要求的每一个尺寸
 """
 import io
 import os
@@ -74,10 +75,32 @@ def main():
         if not mode & 0o111:
             fail("ui/index.cgi is not executable (mode %s)" % oct(mode))
 
+        # ui/config points at "images/icon_{0}.png" and the app centre swaps {0}
+        # for whatever size the device wants (system apps ship nine steps). A
+        # missing step leaves a blank tile on those devices, and it is easy to
+        # lose files on a case-insensitive checkout, so verify every size.
+        ui_config = inner_members.get("ui/config")
+        if ui_config is None:
+            fail("app.tgz is missing ui/config")
+        ui_body = inner.extractfile(ui_config).read().decode("utf-8", "replace")
+        m = re.search(r'"icon"\s*:\s*"([^"]+)"', ui_body)
+        if not m:
+            fail("ui/config has no icon field")
+        icon_tpl = m.group(1)
+        if "{0}" in icon_tpl:
+            for size in (16, 24, 48, 64, 72, 96, 128, 256, 512):
+                want = "ui/" + icon_tpl.replace("{0}", str(size))
+                if want not in inner_members:
+                    fail("ui/config wants %s but app.tgz has no %s" % (icon_tpl, want))
+        else:
+            if ("ui/" + icon_tpl) not in inner_members:
+                fail("ui/config wants %s but app.tgz has no ui/%s" % (icon_tpl, icon_tpl))
+
     print("OK  %s" % os.path.basename(path))
     print("    appname=%s version=%s platform=%s" % (appname, version, platform))
     print("    外层 %d 项 / app.tgz %d 项，cmd+index.cgi 可执行位正常"
           % (len(members), len(inner_members)))
+    print("    图标占位符 %s 的尺寸齐全" % icon_tpl)
     print("    size=%d bytes" % os.path.getsize(path))
 
 
