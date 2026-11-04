@@ -163,7 +163,6 @@
         updateInstallVersion: "",
       updateProgressDone: 0,
       updateProgressTotal: 0,
-      updateInstallPhase: "",
         updateInstallDetail: "",
         installTimer: null,
 
@@ -204,17 +203,13 @@
       updateProgressKnown: function () {
         return this.updateProgressTotal > 0;
       },
-      /* The release package is only ~190 KB, so the whole transfer can finish
-         between two polls and the bar would jump 0 -> 100 with nothing visible.
-         Hold it at 99 while the download phase is still running so the
-         transition always shows movement; a genuine 100 only appears once the
-         server has moved on to the install phase. */
+      /* Straight percentage of the bytes the server has received: the bar hits
+         100 the moment the download finishes. No artificial ceiling - a real
+         100% is honest and the install phase simply keeps it there. */
       updateProgressPct: function () {
         if (!this.updateProgressTotal) return 0;
         const raw = (this.updateProgressDone / this.updateProgressTotal) * 100;
-        const clamped = Math.max(0, Math.min(100, raw));
-        if (clamped >= 100 && this.updateInstallPhase === "downloading") return 99;
-        return Math.round(clamped);
+        return Math.round(Math.max(0, Math.min(100, raw)));
       },
       navItems: function () {
         const t = this.t;
@@ -1397,7 +1392,6 @@ serverName: function () {
         this.updateError = "";
         this.updateProgressDone = 0;
         this.updateProgressTotal = 0;
-        this.updateInstallPhase = "downloading";
         /* pollStatus()/installUpdate() are independent of each other: the
            install request blocks for as long as the download lasts, so the
            progress has to come from a second request that reads the server's
@@ -1406,12 +1400,30 @@ serverName: function () {
         try {
           const r = await API.installUpdate();
           if (!r || !r.ok) throw new Error((r && r.error) || "install failed");
+          /* The download finishes while installUpdate() is still blocking, and
+             the 400ms poll can easily miss the last chunk - without this final
+             read the bar would freeze a few percent short and jump straight to
+             the install phase. One sync here makes it land on 100%. */
+          await this.syncProgress();
           this.updateInstallDetail = this.t("update.restarting");
           this.pollAfterInstall();
         } catch (e) {
+          await this.syncProgress();
           clearInterval(this.progressTimer);
           this.updateInstalling = false;
           this.updateError = this.t("update.installFailed", { v: e.message });
+        }
+      },
+      /* One-shot read of the server's progress counters, used to settle the bar
+         on its true final value before the polling loop is torn down. */
+      syncProgress: async function () {
+        try {
+          const st = await API.updateStatus();
+          if (!st) return;
+          if (typeof st.done === "number") this.updateProgressDone = st.done;
+          if (typeof st.total === "number") this.updateProgressTotal = st.total;
+        } catch (e) {
+          /* the panel may already be restarting - keep the last known value */
         }
       },
       /* Reads /api/update/status every 400ms while the install request is in
@@ -1424,7 +1436,6 @@ serverName: function () {
             const st = await API.updateStatus();
             if (!st) return;
             if (st.detail) self.updateInstallDetail = st.detail;
-            if (st.phase) self.updateInstallPhase = st.phase;
             if (typeof st.done === "number") self.updateProgressDone = st.done;
             if (typeof st.total === "number") self.updateProgressTotal = st.total;
           } catch (e) {
