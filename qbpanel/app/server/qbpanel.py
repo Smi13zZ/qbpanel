@@ -849,6 +849,30 @@ def notify_thread():
         time.sleep(30)
 
 
+UPDATE_POLL_DELAY = 60
+UPDATE_POLL_INTERVAL = 3600
+
+
+def update_poll_thread():
+    """服务端自己定期查一次新版本。
+
+    之前的版本检查只发生在浏览器打开设置页的时候，没人开面板就一直不知道
+    有新版本，站内通知也就发不出去。这里补一个后台定时任务：先等一分钟让
+    面板先把请求服务起来，之后每小时查一次。check_update 内部已有 900 秒
+    缓存和失败冷却，多调几次也不会把 GitHub 的额度打满。
+    """
+    time.sleep(UPDATE_POLL_DELAY)
+    while True:
+        try:
+            info = check_update(force=False)
+            if info.get("has_update"):
+                log("update check: %s available (current %s)" % (info.get("latest"), VERSION))
+        except Exception as exc:
+            # 查版本失败（断网、限流、解析异常）只记日志，线程必须活着
+            log("update poll loop error: %r" % (exc,))
+        time.sleep(UPDATE_POLL_INTERVAL)
+
+
 # --------------------------------------------------------------------------
 # one-click update
 #
@@ -1419,6 +1443,8 @@ class Handler(BaseHTTPRequestHandler):
         # ---------------- notifications ----------------
         if path == "/api/notify" and method == "GET":
             cfg = notify_settings()
+            # lang 只影响显示名，缺省中文；面板切语言时重新拉一次即可
+            lang = (qs.get("lang") or ["zh"])[0].strip().lower() or "zh"
             self.send_json({
                 "ok": True,
                 "settings": {
@@ -1428,6 +1454,8 @@ class Handler(BaseHTTPRequestHandler):
                 },
                 "channels": [notify.channel_public(c) for c in cfg["channels"]],
                 "types": list(notify.CHANNEL_TYPES.keys()),
+                # 字段表交给后端定义，面板据此动态渲染，新增渠道时前端不用跟着改
+                "typeMeta": notify.type_meta(lang),
             })
             return
 
@@ -2000,6 +2028,7 @@ def main():
     httpd.allow_reuse_address = True
     threading.Thread(target=backup_thread, daemon=True).start()
     threading.Thread(target=notify_thread, daemon=True).start()
+    threading.Thread(target=update_poll_thread, daemon=True).start()
     log("qbpanel %s listening on %s:%d (web=%s var=%s share=%s)" % (
         VERSION, host, port, web_dir(), var_dir(), backends.share_dir() or "-"))
     try:

@@ -392,6 +392,8 @@ input[type="number"] { -moz-appearance: textfield; }
 .workbar-dot {
   position: absolute; top: 4px; right: 4px;
   width: 6px; height: 6px; border-radius: 50%; background: var(--danger);
+  /* 标签文字里不能占位，也不该被长标签挤走：绝对定位到按钮右上角下沿 */
+  flex: 0 0 auto; pointer-events: none;
 }
 
 /* ---------------- progress ---------------- */
@@ -884,6 +886,7 @@ canvas { display: block; width: 100%; height: 100%; }
   .modal-foot { padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
   .tabs button { padding: 0 12px; }
   .workbar button { height: 34px; padding: 0 12px; }
+  .workbar-dot { top: 6px; right: 3px; }
 
   /* Phone: headline owns the first row, the action drops to a full-width
      second row (thumb reach), the close button rides along at the right. */

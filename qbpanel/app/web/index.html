@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.9">
+<link rel="stylesheet" href="./style.css?v=26.11.10">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -472,9 +472,12 @@
       <template v-if="view === 'settings'">
         <!-- sectioned work bar: one group of cards at a time -->
         <div class="workbar">
+          <!-- 有新版时「更新」标签右上角点一个红点：用户不必主动进那一页
+               才知道有更新 -->
           <button v-for="st in settingsTabs" :key="st.id" type="button"
                   :class="{ on: settingsTab === st.id }" @click="settingsTab = st.id">
             <span>{{ st.label }}</span>
+            <i class="workbar-dot" v-if="st.id === 'update' && updateNew"></i>
           </button>
         </div>
 
@@ -892,6 +895,7 @@
             <dd>{{ updateInfo && updateInfo.published_at ? updateInfo.published_at.slice(0, 10) : '—' }}</dd>
           </dl>
           <div class="hint" style="margin-top:12px">{{ t('update.hint') }}</div>
+          <div class="hint">{{ t('update.autoCheck') }}</div>
         </div>
       </template>
 
@@ -1281,63 +1285,23 @@
                 })"><span class="v">{{ notifyTypeLabel(channelForm.type) }}</span></button>
       </div>
 
-      <template v-if="channelForm.type === 'bark'">
+      <!-- 字段由后端 typeMeta 的数据驱动渲染：新增渠道只要后端补一条元数据，
+           这里不用再加一段 template。密码框与普通输入框的区分、多行请求头、
+           字段说明都来自 channelFields 计算属性。 -->
+      <template v-for="f in channelFields" :key="f.name">
         <div class="field">
-          <label>{{ t('notify.f.barkServer') }}</label>
-          <input class="input" v-model="channelForm.config.server" placeholder="https://api.day.app">
-        </div>
-        <div class="field">
-          <label>{{ t('notify.f.barkKey') }}</label>
-          <input class="input" type="password" autocomplete="new-password"
-                 v-model="channelForm.config.key" :placeholder="secretHint(channelForm.secretSet.key)">
-        </div>
-      </template>
-
-      <template v-else-if="channelForm.type === 'serverchan'">
-        <div class="field">
-          <label>{{ t('notify.f.sendkey') }}</label>
-          <input class="input" type="password" autocomplete="new-password"
-                 v-model="channelForm.config.sendkey" :placeholder="secretHint(channelForm.secretSet.sendkey)">
-          <div class="hint">{{ t('notify.f.sendkeyHint') }}</div>
-        </div>
-      </template>
-
-      <template v-else-if="channelForm.type === 'pushplus'">
-        <div class="field">
-          <label>{{ t('notify.f.token') }}</label>
-          <input class="input" type="password" autocomplete="new-password"
-                 v-model="channelForm.config.token" :placeholder="secretHint(channelForm.secretSet.token)">
-        </div>
-      </template>
-
-      <template v-else-if="channelForm.type === 'wxpusher'">
-        <div class="field">
-          <label>{{ t('notify.f.appToken') }}</label>
-          <input class="input" type="password" autocomplete="new-password"
-                 v-model="channelForm.config.app_token" :placeholder="secretHint(channelForm.secretSet.app_token)">
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <label>{{ t('notify.f.uids') }}</label>
-            <input class="input" v-model="channelForm.config.uids" placeholder="UID_xxx, UID_yyy">
-          </div>
-          <div class="field">
-            <label>{{ t('notify.f.topics') }}</label>
-            <input class="input" v-model="channelForm.config.topics" placeholder="1234, 5678">
-          </div>
-        </div>
-      </template>
-
-      <template v-else-if="channelForm.type === 'webhook'">
-        <div class="field">
-          <label>{{ t('notify.f.url') }}</label>
-          <input class="input" v-model="channelForm.config.url" placeholder="https://example.com/hook">
-        </div>
-        <div class="field">
-          <label>{{ t('notify.f.headers') }}</label>
-          <textarea class="textarea" rows="3" v-model="channelForm.config.headers"
-                    :placeholder="channelForm.secretSet.headers ? t('notify.f.secretSaved') : 'Authorization: Bearer xxx'"></textarea>
-          <div class="hint">{{ t('notify.f.headersHint') }}</div>
+          <label>{{ f.label }}</label>
+          <textarea v-if="f.multiline" class="textarea" rows="3"
+                    v-model="channelForm.config[f.name]"
+                    :placeholder="f.secret && channelForm.secretSet[f.name]
+                      ? t('notify.f.secretSaved') : (f.example || '')"></textarea>
+          <input v-else-if="f.secret" class="input" type="password" autocomplete="new-password"
+                 v-model="channelForm.config[f.name]"
+                 :placeholder="channelForm.secretSet[f.name]
+                   ? t('notify.f.secretSaved') : (f.example || '')">
+          <input v-else class="input" type="text"
+                 v-model="channelForm.config[f.name]" :placeholder="f.example || ''">
+          <div class="hint" v-if="f.hint">{{ f.hint }}</div>
         </div>
       </template>
 
@@ -1408,10 +1372,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.11.9"></script>
-<script src="./js/util.js?v=26.11.9"></script>
-<script src="./js/api.js?v=26.11.9"></script>
-<script src="./js/charts.js?v=26.11.9"></script>
-<script src="./js/app.js?v=26.11.9"></script>
+<script src="./js/i18n.js?v=26.11.10"></script>
+<script src="./js/util.js?v=26.11.10"></script>
+<script src="./js/api.js?v=26.11.10"></script>
+<script src="./js/charts.js?v=26.11.10"></script>
+<script src="./js/app.js?v=26.11.10"></script>
 </body>
 </html>

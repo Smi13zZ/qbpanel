@@ -64,6 +64,85 @@
   const NOTIFY_LOG_ROWS = 5;
   const NOTIFY_LOG_GAP = 8;
 
+  /* 页面打开期间多久刷新一次版本状态。服务端自己每小时也会检查，这里只负责
+     让已经开着的那一页跟上，两个频率互不干扰。 */
+  const UPDATE_CHECK_MS = 30 * 60 * 1000;
+
+  /* 渠道类型 -> 表单字段。后端 /api/notify 的 typeMeta 优先使用，这份表只在
+     后端没下发（老版本）时兜底；example 是输入框的示例占位文案。
+     labelKey / hintKey 指向 i18n，缺失时回落到后端给的显示名。 */
+  const CHANNEL_FIELDS = {
+    bark: [
+      { name: "server", labelKey: "notify.f.barkServer", example: "https://api.day.app" },
+      { name: "key", labelKey: "notify.f.barkKey", secret: true },
+    ],
+    serverchan: [
+      { name: "sendkey", labelKey: "notify.f.sendkey", hintKey: "notify.f.sendkeyHint", secret: true },
+    ],
+    pushplus: [
+      { name: "token", labelKey: "notify.f.token", secret: true },
+    ],
+    wxpusher: [
+      { name: "app_token", labelKey: "notify.f.appToken", secret: true },
+      { name: "uids", labelKey: "notify.f.uids", example: "UID_xxx, UID_yyy" },
+      { name: "topics", labelKey: "notify.f.topics", example: "1234, 5678" },
+    ],
+    telegram: [
+      { name: "bot_token", labelKey: "notify.f.botToken", hintKey: "notify.f.botTokenHint", secret: true },
+      { name: "chat_id", labelKey: "notify.f.chatId", hintKey: "notify.f.chatIdHint", example: "-1001234567890" },
+      { name: "api_base", labelKey: "notify.f.apiBase", hintKey: "notify.f.apiBaseHint", example: "https://api.telegram.org" },
+    ],
+    wecom: [
+      { name: "key", labelKey: "notify.f.wecomKey", hintKey: "notify.f.wecomKeyHint", secret: true },
+    ],
+    dingtalk: [
+      /* url 里带着 access_token，后端也把它当密钥字段（不回显），这里保持一致 */
+      { name: "url", labelKey: "notify.f.url", hintKey: "notify.f.dingtalkUrlHint", secret: true,
+        example: "https://oapi.dingtalk.com/robot/send?access_token=..." },
+      { name: "secret", labelKey: "notify.f.secret", hintKey: "notify.f.secretHint", secret: true },
+    ],
+    slack: [
+      { name: "url", labelKey: "notify.f.url", hintKey: "notify.f.slackUrlHint", secret: true,
+        example: "https://hooks.slack.com/services/..." },
+    ],
+    webhook: [
+      { name: "url", labelKey: "notify.f.url", example: "https://example.com/hook" },
+      { name: "headers", labelKey: "notify.f.headers", hintKey: "notify.f.headersHint", secret: true,
+        multiline: true, example: "Authorization: Bearer xxx" },
+    ],
+  };
+
+  /* 所有内置字段名，用来给新建表单先铺好空值：切换渠道类型时已填的内容不会丢 */
+  const CHANNEL_FIELD_NAMES = (function () {
+    const seen = {};
+    const out = [];
+    Object.keys(CHANNEL_FIELDS).forEach(function (type) {
+      CHANNEL_FIELDS[type].forEach(function (d) {
+        if (seen[d.name]) return;
+        seen[d.name] = true;
+        out.push(d.name);
+      });
+    });
+    return out;
+  })();
+
+  /* typeMeta 的 labels / hints 可能是摊平后的当前语言字符串，也可能是 {zh,en}
+     两份。后者能让面板切语言时立刻跟着变，不必重新请求接口。 */
+  function metaText(entry, lang) {
+    if (entry && typeof entry === "object") {
+      const k = lang === "en" ? "en" : "zh";
+      return entry[k] || entry.zh || entry.en || "";
+    }
+    return typeof entry === "string" ? entry : "";
+  }
+
+  /* i18n 查不到时 t() 会原样返回 key，这里用于区分「有文案」和「没有文案」 */
+  function i18nOrEmpty(t, key) {
+    if (!key) return "";
+    const s = t(key);
+    return s === key ? "" : s;
+  }
+
   function fmtNum(n) {
     n = Number(n) || 0;
     return n.toLocaleString();
@@ -170,7 +249,14 @@
         /* notifications */
         notifyCfg: { enabled: false, on_complete: true, on_update: true },
         notifyChannels: [],
-        notifyTypes: ["bark", "serverchan", "pushplus", "wxpusher", "webhook"],
+        /* 兜底的九种类型；后端下发 types 时以接口为准 */
+        notifyTypes: ["bark", "serverchan", "pushplus", "wxpusher", "telegram", "wecom", "dingtalk", "slack", "webhook"],
+        /* 后端给的类型元数据：{类型: {label_zh,label_en,fields,secrets,labels,hints}}。
+           老版本没有这个字段时留空，表单退回到 CHANNEL_FIELDS 内置的那份。 */
+        notifyTypeMeta: {},
+        /* 上次成功发起版本检查的时间戳。不用 _ 开头的名字：Vue 里下划线开头的
+           data key 不会暴露到模板。 */
+        lastUpdateCheckAt: 0,
         channelForm: null,
         savingChannel: false,
         testingChannel: "",
@@ -362,6 +448,53 @@
       notifyLogFailed: function () {
         return this.notifyLog.filter(function (r) { return !r.ok; }).length;
       },
+      /* 当前编辑渠道的表单元数据：后端 typeMeta 优先，没有就退到内置表。
+         两种来源都摊平成同一种形状，模板只管 v-for 渲染，不再为每种渠道
+         各写一段 template。 */
+      channelFields: function () {
+        const form = this.channelForm;
+        if (!form) return [];
+        const lang = this.lang;
+        const t = this.t;
+        const meta = this.notifyTypeMeta[form.type] || null;
+        const fallback = CHANNEL_FIELDS[form.type] || [];
+
+        if (meta && meta.fields && meta.fields.length) {
+          const secrets = meta.secrets || [];
+          const labels = meta.labels || {};
+          const hints = meta.hints || {};
+          return meta.fields.map(function (name) {
+            const builtin = fallback.filter(function (d) { return d.name === name; })[0] || null;
+            /* 后端只给当前语言，切换语言后要能立刻变：优先 labels_i18n 的双语表 */
+            const biLabel = metaText((meta.labels_i18n || {})[name], lang);
+            const biHint = metaText((meta.hints_i18n || {})[name], lang);
+            const label = biLabel || metaText(labels[name], lang)
+              || i18nOrEmpty(t, builtin && builtin.labelKey) || name;
+            const hint = biHint || metaText(hints[name], lang)
+              || i18nOrEmpty(t, builtin && builtin.hintKey);
+            return {
+              name: name,
+              label: label,
+              secret: secrets.indexOf(name) >= 0 || !!(builtin && builtin.secret),
+              hint: hint,
+              multiline: !!(builtin && builtin.multiline) || name === "headers",
+              example: (builtin && builtin.example) || "",
+            };
+          });
+        }
+
+        /* 兜底：老后端没有 typeMeta，用内置字段表 + i18n 文案渲染 */
+        return fallback.map(function (d) {
+          return {
+            name: d.name,
+            label: i18nOrEmpty(t, d.labelKey) || d.name,
+            secret: !!d.secret,
+            hint: i18nOrEmpty(t, d.hintKey),
+            multiline: !!d.multiline,
+            example: d.example || "",
+          };
+        });
+      },
     },
 
     watch: {
@@ -382,7 +515,13 @@
       notifyLogFilter: function () { this.$nextTick(this.measureNotifyLog); },
       lang: function () { this.$nextTick(this.measureNotifyLog); },
       "channelForm.type": function (type) {
-        if (type) this.ensureChannelFields(type);
+        if (!type) return;
+        this.ensureChannelFields(type);
+        const f = this.channelForm;
+        if (!f || !f.origType) return;
+        /* 切回原来的类型，把它的「已保存」标记还回去；换成别的类型就清空，
+           避免拿着别的渠道的标记在不相干的字段上显示「已保存」 */
+        f.secretSet = f.origType === type ? Object.assign({}, f.secretSetOrig || {}) : {};
       },
     },
 
@@ -397,6 +536,16 @@
         if (this._mq.addEventListener) this._mq.addEventListener("change", this._onScheme);
         else if (this._mq.addListener) this._mq.addListener(this._onScheme);
       }
+      /* 页面开着的时候也要能自己跟上版本：定时轮询 + 切回标签页时按需补查，
+         二者都只走缓存检查（checkUpdate(false)），不额外打发布接口。 */
+      this._updateTimer = setInterval(() => { this.checkUpdate(false); }, UPDATE_CHECK_MS);
+      this._onVisibility = () => {
+        if (document.hidden) return;
+        const since = Date.now() - (this.lastUpdateCheckAt || 0);
+        if (since >= UPDATE_CHECK_MS) this.checkUpdate(false);
+      };
+      document.addEventListener("visibilitychange", this._onVisibility);
+
       this._mmq = window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
       if (this._mmq) {
         this._onViewport = () => { this.isMobile = !!this._mmq.matches; };
@@ -408,6 +557,8 @@
 
     beforeUnmount: function () {
       clearInterval(this._sparkTimer);
+      clearInterval(this._updateTimer);
+      document.removeEventListener("visibilitychange", this._onVisibility);
       window.removeEventListener("resize", this._onResize);
       if (this._mq && this._onScheme) {
         if (this._mq.removeEventListener) this._mq.removeEventListener("change", this._onScheme);
@@ -1345,6 +1496,8 @@ serverName: function () {
         if (this.updateChecking) return;
         this.updateChecking = true;
         this.updateError = "";
+        /* 记下发起时刻，切回标签页时用它判断距上次检查够不够久 */
+        this.lastUpdateCheckAt = Date.now();
         try {
           const r = await API.updateCheck(!!force);
           this.updateInfo = r || null;
@@ -1489,10 +1642,14 @@ serverName: function () {
       /* ---------------- notifications ---------------- */
       loadNotify: async function () {
         try {
+          /* 接口的 lang 参数不参与：typeMeta 里同时带双语表（labels_i18n /
+             hints_i18n），切语言时面板自己挑，不必再打一次请求 */
           const r = await API.notify();
           if (r.settings) this.notifyCfg = r.settings;
           this.notifyChannels = r.channels || [];
           if (r.types && r.types.length) this.notifyTypes = r.types;
+          /* 后端没下发 typeMeta 时保持空对象，表单会自动退回内置字段表 */
+          this.notifyTypeMeta = (r && r.typeMeta) || {};
         } catch (e) {
           /* the section simply stays empty; nothing else depends on it */
         }
@@ -1557,13 +1714,18 @@ serverName: function () {
           },
         };
       },
+      /* 渠道类型显示名：后端 typeMeta 优先（它带着中英两份显示名），
+         没有就退回 i18n，再没有就把类型名原样显示出来 */
       notifyTypeLabel: function (type) {
+        const meta = this.notifyTypeMeta[type];
+        if (meta) {
+          const bi = this.lang === "en" ? meta.label_en : meta.label_zh;
+          if (bi) return bi;
+          if (meta.label) return meta.label;
+        }
         const key = "notify.type." + type;
         const label = this.t(key);
         return label === key ? type : label;
-      },
-      secretHint: function (isSet) {
-        return isSet ? this.t("notify.f.secretSaved") : "";
       },
       saveNotifyFlag: async function (key, val) {
         const next = Object.assign({}, this.notifyCfg);
@@ -1576,37 +1738,63 @@ serverName: function () {
           this.toast(e.message, "err");
         }
       },
+      /* 字段名清单：后端 typeMeta 优先，没有就用内置表兜底 */
+      fieldNamesOf: function (type) {
+        const meta = this.notifyTypeMeta[type];
+        if (meta && meta.fields && meta.fields.length) return meta.fields.slice();
+        return (CHANNEL_FIELDS[type] || []).map(function (d) { return d.name; });
+      },
+      secretNamesOf: function (type) {
+        const meta = this.notifyTypeMeta[type];
+        if (meta && meta.secrets) return meta.secrets.slice();
+        return (CHANNEL_FIELDS[type] || [])
+          .filter(function (d) { return d.secret; })
+          .map(function (d) { return d.name; });
+      },
       openChannelForm: function (ch) {
         const type = ch ? ch.type : (this.notifyTypes[0] || "bark");
+        /* 先把所有内置字段铺成空值：切换渠道类型时已经填好的内容不会丢，
+           新类型也不会因为缺 key 变成 v-model undefined */
         const cfg = {};
-        ["server", "key", "sendkey", "token", "app_token", "uids", "topics", "url", "headers"].forEach(function (k) {
-          cfg[k] = ch && ch.config && ch.config[k] ? ch.config[k] : "";
-        });
+        CHANNEL_FIELD_NAMES.forEach(function (k) { cfg[k] = ""; });
         const secretSet = {};
-        ((ch && ch.secrets) || []).forEach(function (k) {
-          secretSet[k] = !!(ch.config && ch.config[k]);
-        });
+        if (ch && ch.config) {
+          /* 渠道自带的 secrets 最准；老后端没给这一项时退回类型定义里的密钥字段 */
+          const secretNames = (ch.secrets && ch.secrets.length)
+            ? ch.secrets
+            : this.secretNamesOf(ch.type);
+          Object.keys(ch.config).forEach(function (k) {
+            const v = ch.config[k];
+            /* 密钥字段回来的是「已保存」标记而不是真值，不能填进输入框，
+               否则会被当成新值原样提交回去 */
+            const isSecret = secretNames.indexOf(k) >= 0;
+            if (isSecret) {
+              secretSet[k] = !!v;
+              cfg[k] = "";
+            } else {
+              cfg[k] = v === undefined || v === null ? "" : v;
+            }
+          });
+        }
         this.channelForm = {
           id: ch ? ch.id : "",
           name: ch ? ch.name : "",
           type: type,
+          /* 记住编辑前的类型：切换类型时用它判断「已保存」提示还作不作数——
+             换了类型，旧类型的密钥标记跟新字段没有关系 */
+          origType: ch ? ch.type : "",
           enabled: ch ? ch.enabled : true,
           config: cfg,
           secretSet: secretSet,
+          secretSetOrig: Object.assign({}, secretSet),
         };
         this.ensureChannelFields(type);
       },
+      /* 切换到别的渠道类型时，把该类型用到的字段补成空串 */
       ensureChannelFields: function (type) {
         if (!this.channelForm) return;
-        const map = {
-          bark: ["server", "key"],
-          serverchan: ["sendkey"],
-          pushplus: ["token"],
-          wxpusher: ["app_token", "uids", "topics"],
-          webhook: ["url", "headers"],
-        };
         const cfg = this.channelForm.config;
-        (map[type] || []).forEach(function (k) {
+        this.fieldNamesOf(type).forEach(function (k) {
           if (cfg[k] === undefined || cfg[k] === null) cfg[k] = "";
         });
       },

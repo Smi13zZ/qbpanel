@@ -42,8 +42,8 @@ Two backends are supported: **qBittorrent (WebAPI v2, 4.x and 5.x)** and **Trans
 | **Logs** | Downloader log with level colours (normal / info / warning / critical) and auto refresh; switching servers swaps the log list with it |
 | **Settings** | Sectioned work bar (panel / downloader / maintenance / notifications / update); tri-state theme, EN / 中文, refresh interval, global speed limits, default save path |
 | **Backups** | Export / import JSON config, scheduled auto-backup into the fnOS app folder; the list shows five rows and scrolls, with restore or delete per entry |
-| **Notifications** | Five channel types — Bark, ServerChan, PushPlus, WxPusher and custom webhooks; events for finished torrents and new releases; per-channel test send, secrets stay on the device; **delivery records** show whether each push went out, why it failed and what was sent |
-| **Updates** | Reads the latest published release from GitHub and compares it with the installed build; a banner appears on every page and the sidebar flags it. **One-click update** downloads the package, runs the system installer and rolls back automatically if the new build fails to start |
+| **Notifications** | Nine channel types — Bark, ServerChan, PushPlus, WxPusher, Telegram, WeCom bot, DingTalk bot, Slack and custom webhooks; events for finished torrents and new releases; per-channel test send, secrets stay on the device; **delivery records** show whether each push went out, why it failed and what was sent |
+| **Updates** | The service process checks the latest published release hourly, independent of whether anyone has the panel open, and the panel refreshes it every 30 minutes while open; a red dot marks the Update tab and the sidebar entry and a banner appears on every page. **One-click update** downloads the package, runs the system installer and rolls back automatically if the new build fails to start |
 | **Mobile** | Drawer sidebar, bottom-sheet pickers, card layout — tuned inside the fnOS phone app's embedded browser |
 | **Deep links** | `?view=`, `?theme=`, `?lang=` and `?hash=` parameters |
 
@@ -102,7 +102,7 @@ Mobile (390px):
 
 ```bash
 printf 'wizard_backend_port=8898\n' > /tmp/qbpanel.env
-sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.11.9-fnos-all.fpk
+sudo appcenter-cli install-fpk -e /tmp/qbpanel.env /path/to/fn-qbpanel-26.11.10-fnos-all.fpk
 ```
 
 > Two gotchas: the `-e` env file is **mandatory**, otherwise you get
@@ -173,7 +173,7 @@ Settings opens with a sectioned work bar so one group of options is on screen at
 
 ### 6. Notifications
 
-Configured under Settings → Notifications. Channels: **Bark** (server + device key), **ServerChan** (SendKey), **PushPlus** (token), **WxPusher** (appToken, optional UID / topic), and a **custom webhook** (URL plus optional `Key: Value` headers). Two event switches: *torrent finished* (sent once per torrent) and *new version* (once per release). Each channel has a **Test** button; secrets are stored locally and never echoed back.
+Configured under Settings → Notifications. Channels: **Bark** (server + device key), **ServerChan** (SendKey), **PushPlus** (token), **WxPusher** (appToken, optional UID / topic), **Telegram** (bot token + chat ID, plus an optional API base for a self-hosted relay), **WeCom bot** (the part after `key=` in the group bot webhook URL), **DingTalk bot** (webhook URL plus the signing secret when signing is enabled — the panel adds `timestamp` and `sign` itself), **Slack** (incoming webhook URL), and a **custom webhook** (URL plus optional `Key: Value` headers). Two event switches: *torrent finished* (sent once per torrent) and *new version* (once per release). Every field carries a one-line hint in the form, and each channel has its own **Test** button; secrets are stored locally and never echoed back.
 
 #### Delivery records
 
@@ -187,7 +187,7 @@ Filter by all / sent / failed, refresh by hand or clear the list. Records live i
 
 ### 7. Updates
 
-The panel queries the project's release feed once shortly after start-up. When a newer build exists, a dot appears next to *Settings* in the sidebar and a banner shows on every page (dismissable for the session). The Update section compares installed and latest version side by side and shows the release notes. **Update now** downloads the `.fpk`, runs the system installer and waits for the new build to answer; if it fails to start, the previous package is reinstalled automatically. If GitHub rate-limits the API (403), the panel falls back to the releases Atom feed and the asset list, so version, notes and package are still available.
+**The service process checks for a new release every hour** — once about a minute after start-up, then hourly — so a new build is noticed and announced even when nobody has the panel open. While the panel is open it also refreshes the update state every 30 minutes, and catches up on the next window focus if the last check is more than 30 minutes old. When a newer build exists, a red dot appears on the **Update** tab in the settings work bar and next to *Settings* in the sidebar, and a banner shows on every page (dismissable for the session). The Update section compares installed and latest version side by side and shows the release notes. **Update now** downloads the `.fpk`, runs the system installer and waits for the new build to answer; if it fails to start, the previous package is reinstalled automatically. If GitHub rate-limits the API (403), the panel falls back to the releases Atom feed and the asset list, so version, notes and package are still available.
 
 ---
 
