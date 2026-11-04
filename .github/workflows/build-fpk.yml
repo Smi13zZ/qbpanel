@@ -60,6 +60,9 @@ jobs:
           fnpack build --help >/dev/null
           echo "fnpack 就绪：$(fnpack --help 2>&1 | grep -i version || echo 1.2.3)"
 
+      - name: 检查图标大小写与尺寸完整性
+        run: python3 tools/check_icon_case.py
+
       - name: 准备打包目录
         run: |
           set -euo pipefail
