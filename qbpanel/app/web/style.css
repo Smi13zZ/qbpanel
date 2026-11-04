@@ -686,7 +686,13 @@ input[type="number"] { -moz-appearance: textfield; }
 @keyframes popin { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .logline { font-family: var(--mono); font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--border-soft); display: flex; gap: 12px; }
-.logline .t { color: var(--faint); flex: 0 0 148px; }
+/* The timestamp is two spans (.d date / .h time). They used to sit next to each
+   other with only a newline between them, and Vue's in-DOM template compiler
+   drops whitespace-only text nodes that contain a newline - so the desktop log
+   column rendered "2026-11-0320:44" with date and time jammed together. Making
+   .t a flex container with an explicit gap puts the space back and keeps the
+   fixed 148px column (16 mono chars + gap still fits). */
+.logline .t { color: var(--faint); flex: 0 0 148px; display: flex; align-items: baseline; gap: 6px; }
 .logline.warn .m { color: var(--warn); }
 .logline.err .m { color: var(--danger); }
 
