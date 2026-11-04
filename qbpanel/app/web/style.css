@@ -815,16 +815,19 @@ canvas { display: block; width: 100%; height: 100%; }
   .tbar-torrents .tsort { order: 4; flex: 0 0 auto; gap: 6px; }
   .tbar-torrents .tsort-pick { flex: 0 0 auto; width: 96px; min-width: 96px; padding-right: 22px; }
   .topbar-server { max-width: 110px; height: 30px; font-size: 12px; padding: 0 8px; }
-  /* Phone reads as an app, not a doc: anchor modals at upper-mid so the cancel
-     / confirm buttons fall under the user's thumb and don't have to be reached
-     from the very bottom of the screen. The scale-up animation makes content-
-     height changes (e.g. add-task tab switch) grow in place instead of jumping
-     the header up and down against the topbar. */
-  .modal-wrap { padding: 8vh 14px 14px; place-items: start center; align-items: flex-start; }
+  /* Phone reads as an app, not a doc: anchor modals toward the top so the cancel
+     / confirm buttons land under the thumb instead of at the very bottom of the
+     screen. The scale-up animation makes content-height changes (e.g. add-task
+     tab switch) grow in place instead of jumping the header up and down.
+     Top offset is 6vh rather than 8vh: on a 956px-tall screen that is 57px of
+     blank sky, which read as "the dialog starts too low".
+     No padding-bottom on .modal itself - .modal-foot already owns its own
+     bottom padding (plus the safe-area inset), so having both stacked an extra
+     ~14px of dead space under the buttons. */
+  .modal-wrap { padding: 6vh 14px 14px; place-items: start center; align-items: flex-start; }
   .modal {
     width: 100%; max-width: 480px; max-height: 80vh;
     border-radius: var(--radius-lg);
-    padding-bottom: calc(14px + env(safe-area-inset-bottom));
     animation: modalpop .22s cubic-bezier(.2, .9, .3, 1);
     transform-origin: 50% 30%;
   }
@@ -849,6 +852,9 @@ canvas { display: block; width: 100%; height: 100%; }
      sit flush against the modal-foot border - on a thumb-reach screen that
      reads as one cramped block, so give the body extra bottom padding. */
   .modal-body { padding-bottom: 30px; }
+  /* A confirm dialog is one short paragraph, not a form - it does not need the
+     last-field breathing room, which just made the box look padded out. */
+  .modal.is-confirm .modal-body { padding-bottom: 16px; }
   .modal-foot { padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
   .tabs button { padding: 0 12px; }
   .workbar button { height: 34px; padding: 0 12px; }
