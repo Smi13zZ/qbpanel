@@ -871,13 +871,17 @@
               <span>{{ updateNew ? t('update.newSub') : t('update.upSub') }}</span>
             </div>
             <div class="spacer"></div>
-            <button class="btn sm" type="button" :disabled="updateChecking || updateInstalling" @click="checkUpdate(true)">
-              <span class="ic" v-html="ic('refresh')"></span>{{ updateChecking ? t('update.checking') : t('update.check') }}
-            </button>
-            <button class="btn sm primary" type="button" v-if="updateNew"
-                    :disabled="updateInstalling" @click="installUpdate">
-              <span class="ic" v-html="ic('download')"></span>{{ updateInstalling ? t('update.installing') : t('update.oneClick') }}
-            </button>
+            <!-- 两个按钮包一层：手机上这一层独占一行、内部左右均分，
+                 桌面上 display: contents 让按钮回到与文字同一行。 -->
+            <div class="vactions">
+              <button class="btn sm" type="button" :disabled="updateChecking || updateInstalling" @click="checkUpdate(true)">
+                <span class="ic" v-html="ic('refresh')"></span>{{ updateChecking ? t('update.checking') : t('update.check') }}
+              </button>
+              <button class="btn sm primary" type="button" v-if="updateNew"
+                      :disabled="updateInstalling" @click="installUpdate">
+                <span class="ic" v-html="ic('download')"></span>{{ updateInstalling ? t('update.installing') : t('update.oneClick') }}
+              </button>
+            </div>
           </div>
           <div class="hint" style="color:var(--danger);margin-top:10px" v-if="updateError">{{ updateError }}</div>
           <div class="hint" style="margin-top:10px" v-if="updateInstalling">{{ updateInstallDetail }}</div>
