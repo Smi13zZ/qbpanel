@@ -640,8 +640,9 @@ def notify_update_event(info):
         state["last_update_notified"] = latest
         save_notify_state(state)
     dispatch(
-        "qBpanel %s 可用" % latest,
-        "当前 v%s，可在面板「设置 → 更新」里一键升级。" % VERSION,
+        "qBpanel %s 可用 / Update available" % latest,
+        ("当前版本 v%s，可在面板「设置 → 更新」里一键升级。\n"
+         "Installed v%s. Open Settings → Update to upgrade.") % (VERSION, VERSION),
         event="update",
     )
 
@@ -761,12 +762,17 @@ def apply_completions(state, srv, items, multi, out):
             tname = str(t.get("name") or h)
             size = human_size(t.get("size") or t.get("total_size"))
             path = str(t.get("save_path") or t.get("download_dir") or "")
-            title = "下载完成：%s" % tname
-            body = "%s\n%s" % (size, path) if path else size
+            title = "qBpanel 下载完成：%s / Download complete" % tname
+            zh = "任务：%s\n大小：%s" % (tname, size)
+            en = "Download complete. Size: %s." % size
+            if path:
+                zh += "\n路径：%s" % path
+                en += " Saved to: %s." % path
+            body = "%s\n%s" % (zh, en)
             if multi:
                 # with more than one server the source has to be in the message
                 title = "[%s] %s" % (name, title)
-                body = "服务器：%s\n%s" % (name, body)
+                body = "服务器 / Server: %s\n%s" % (name, body)
             out.append((title, body, name))
             done[h] = int(time.time())
             seen.pop(h, None)
@@ -1766,8 +1772,11 @@ class Handler(BaseHTTPRequestHandler):
             if not ch:
                 self.fail(404, "channel not found")
                 return
-            title = "qBpanel 通知测试"
-            body = "如果你收到这条消息，说明「%s」渠道配置正确。" % (ch.get("name") or ch.get("type"))
+            title = "qBpanel 测试通知 / Test notification"
+            cname = ch.get("name") or ch.get("type")
+            body = ("这是一条来自 qBpanel 的测试消息，收到即表示「%s」渠道配置正确。\n"
+                    "This is a test message from qBpanel. Channel \"%s\" is working.")
+            body = body % (cname, cname)
             res = notify.send(ch, title, body)
             record_delivery(ch, title, body, "test", res)
             self.send_json({"ok": bool(res.get("ok")), "result": res})
