@@ -344,6 +344,15 @@ input[type="number"] { -moz-appearance: textfield; }
 .dot.err { background: var(--danger); }
 .dot.warn { background: var(--warn); }
 
+/* “当前 / 正在用” 标记：实心反转色，浅色主题近黑底白字，深色主题近白底深字。 */
+.tagcur {
+  display: inline-flex; align-items: center;
+  padding: 3px 6px; border-radius: 5px;
+  font-size: 11px; font-weight: 500; line-height: 1;
+  white-space: nowrap;
+  background: var(--primary); color: var(--primary-fg);
+}
+
 .mono { font-family: var(--mono); font-size: 12px; }
 .dim { color: var(--dim); }
 .faint { color: var(--faint); }

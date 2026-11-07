@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.10">
+<link rel="stylesheet" href="./style.css?v=26.11.14">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -353,7 +353,7 @@
           <div class="card" v-for="s in servers" :key="s.id">
             <div class="row">
               <b class="ellipsis">{{ s.name }}</b>
-              <span class="chip" v-if="s.id === currentId">{{ t('server.current') }}</span>
+              <span class="tagcur" v-if="s.id === currentId">{{ t('server.current') }}</span>
               <div class="spacer"></div>
               <span class="chip">
                 <i class="dot" :class="serverState[s.id] === true ? 'on' : serverState[s.id] === false ? 'err' : (serverState[s.id] === 'testing' ? 'warn' : '')"></i>
@@ -804,7 +804,7 @@
                     <div class="mono ellipsis" :title="u.name">
                       {{ u.name }}
                       <span class="chip" v-if="u.partial" style="margin-left:6px">{{ t('settings.storage.partial') }}</span>
-                      <span class="chip" v-else-if="storageData.current_version && u.name.indexOf(storageData.current_version) >= 0" style="margin-left:6px">{{ t('settings.storage.inUse') }}</span>
+                      <span class="tagcur" v-else-if="storageData.current_version && u.name.indexOf(storageData.current_version) >= 0" style="margin-left:6px">{{ t('settings.storage.inUse') }}</span>
                     </div>
                     <div class="sub">{{ u.t ? fmt.fmtDate(u.t) : '—' }}</div>
                   </td>
