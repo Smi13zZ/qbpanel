@@ -874,6 +874,183 @@ def update_poll_thread():
 
 
 # --------------------------------------------------------------------------
+# storage / cleanup
+# --------------------------------------------------------------------------
+UPDATE_KEEP = 2
+PANEL_LOG = os.path.join(var_dir(), "qbpanel.log")
+INSTALL_LOG = os.path.join(var_dir(), "update", "install.log")
+
+
+def update_download_running():
+    with UPDATE_LOCK:
+        return UPDATE_STATE.get("phase") in ("downloading", "installing")
+
+
+def _update_cache_items():
+    """Everything in UPDATE_DIR that a cleanup decision cares about."""
+    out = []
+    try:
+        names = os.listdir(UPDATE_DIR)
+    except OSError:
+        return out
+    for name in names:
+        low = name.lower()
+        if not (low.endswith(".fpk") or low.endswith(".part") or low.endswith(".tmp")):
+            continue
+        if name == "rollback.fpk":
+            continue
+        path = os.path.join(UPDATE_DIR, name)
+        try:
+            stat = os.stat(path)
+        except OSError:
+            continue
+        out.append({
+            "name": name,
+            "bytes": int(stat.st_size),
+            "t": int(stat.st_mtime),
+            "partial": low.endswith(".part") or low.endswith(".tmp"),
+            "path": path,
+        })
+    out.sort(key=lambda item: item["t"], reverse=True)
+    return out
+
+
+def updates_list():
+    """Cached update packages, newest first. The rollback copy is left alone."""
+    return [{k: v for k, v in item.items() if k != "path"}
+            for item in _update_cache_items()]
+
+
+def purge_update_cache(keep=UPDATE_KEEP, protect_version=VERSION):
+    """Drop stale update packages, temporary files and interrupted downloads.
+
+    Keeps the newest keep complete packages plus the package matching the
+    running version (rollback needs it). Partial and temporary files are always
+    removed unless an update is currently downloading. rollback.fpk is never
+    touched. Failures are logged, never raised: this runs on every start-up.
+    """
+    try:
+        keep = max(0, min(20, int(keep)))
+    except (TypeError, ValueError):
+        keep = UPDATE_KEEP
+    protect = str(protect_version or "").strip().lstrip("vV")
+    root = os.path.realpath(UPDATE_DIR)
+    items = _update_cache_items()
+    full = [item for item in items if not item["partial"]]
+    keep_names = set(item["name"] for item in full[:keep])
+    removed = []
+    kept = []
+    freed = 0
+    refused = False
+    for item in items:
+        name = item["name"]
+        if protect and protect in name:
+            kept.append(name)
+            continue
+        if not item["partial"] and name in keep_names:
+            kept.append(name)
+            continue
+        # A download in progress writes straight into UPDATE_DIR: never unlink
+        # the file it holds open, and leave every .part/.tmp where it is.
+        if item["partial"] and update_download_running():
+            refused = True
+            kept.append(name)
+            continue
+        if not os.path.realpath(item["path"]).startswith(root + os.sep):
+            continue
+        try:
+            os.remove(item["path"])
+            removed.append(name)
+            freed += item["bytes"]
+        except OSError as exc:
+            log("update cache cleanup skip %s: %r" % (name, exc))
+    if removed:
+        log("update cache cleanup: removed %d files, freed %.1f MB"
+            % (len(removed), freed / 1024.0 / 1024.0))
+    return {"removed": removed, "kept": kept, "count": len(removed),
+            "freed": freed, "keep": keep, "protect": protect,
+            "refused": refused}
+
+
+def purge_update_cache_at_start():
+    # The update installer replaces this very process; cleaning in the old one
+    # could delete the package being installed. Running here, in the new
+    # process, is the first point guaranteed to be after "install done".
+    try:
+        purge_update_cache(UPDATE_KEEP, VERSION)
+    except Exception as exc:
+        log("update cache cleanup failed: %r" % (exc,))
+
+
+def _dir_size(path):
+    total = 0
+    files = 0
+    try:
+        for root, _dirs, names in os.walk(path):
+            for name in names:
+                try:
+                    total += os.path.getsize(os.path.join(root, name))
+                    files += 1
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total, files
+
+
+def _file_size(path):
+    try:
+        if os.path.isfile(path):
+            return os.path.getsize(path), 1
+    except OSError:
+        pass
+    return 0, 0
+
+
+def storage_report():
+    """Disk usage of the panel folders. Unreadable entries count as 0."""
+    rows = []
+    for key, label, path, kind in (
+        ("updates", "更新包缓存", UPDATE_DIR, "dir"),
+        ("backups", "配置备份", backends.backup_dir(), "dir"),
+        ("panel_log", "面板日志", PANEL_LOG, "file"),
+        ("panel_log1", "面板日志（上一份）", PANEL_LOG + ".1", "file"),
+        ("update_log", "更新安装日志", INSTALL_LOG, "file"),
+    ):
+        size, files = _dir_size(path) if kind == "dir" else _file_size(path)
+        rows.append({"key": key, "label": label, "bytes": int(size),
+                     "files": int(files), "path": path, "kind": kind})
+    return {"items": rows, "total": sum(item["bytes"] for item in rows),
+            "var_dir": var_dir()}
+
+
+def clear_panel_logs():
+    """Empty the panel log in place while the process holds its fd.
+
+    log() opens qbpanel.log with "a" for every line, so unlinking it would only
+    remove the directory entry - the running process keeps writing to the old
+    inode and the space never comes back. Truncating with "wb" frees it safely.
+    The detached update script appends to install.log the same way, so it is
+    truncated too. The rotated .1 copy is not open by this process.
+    """
+    freed = 0
+    removed = []
+    for path in (PANEL_LOG, PANEL_LOG + ".1", INSTALL_LOG):
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        try:
+            with open(path, "wb"):
+                pass
+            freed += size
+            removed.append(os.path.basename(path))
+        except OSError as exc:
+            log("log cleanup skip %s: %r" % (path, exc))
+    return {"removed": removed, "count": len(removed), "freed": freed}
+
+
+# --------------------------------------------------------------------------
 # one-click update
 #
 # fnOS refuses to upgrade an installed app through install-fpk, so the update
@@ -1437,6 +1614,61 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/update/status":
             payload = {"ok": True}
             payload.update(update_status())
+            self.send_json(payload)
+            return
+
+        # ---------------- storage / cleanup ----------------
+        if path == "/api/maintenance/storage":
+            if method not in ("GET", "HEAD"):
+                self.fail(405, "method not allowed")
+                return
+            payload = {"ok": True}
+            payload.update(storage_report())
+            payload["updates"] = updates_list()
+            payload["updates_keep"] = UPDATE_KEEP
+            payload["current_version"] = VERSION
+            self.send_json(payload)
+            return
+
+        if path == "/api/maintenance/cleanup" and method == "POST":
+            body = self.json_body()
+            target = str(body.get("target") or "").strip().lower()
+            if target not in ("updates", "logs", "all"):
+                self.fail(400, "请指定要清理的内容（updates / logs / all）")
+                return
+            # A download writes straight into UPDATE_DIR; deleting its files
+            # underneath it would corrupt the install in progress.
+            if target in ("updates", "all") and update_download_running():
+                self.fail(409, "正在下载更新包，请等下载完成后再清理")
+                return
+            results = {}
+            if target in ("updates", "all"):
+                try:
+                    keep = int(body.get("keep") if body.get("keep") is not None else UPDATE_KEEP)
+                except (TypeError, ValueError):
+                    keep = UPDATE_KEEP
+                results["updates"] = purge_update_cache(keep, VERSION)
+            if target in ("logs", "all"):
+                results["logs"] = clear_panel_logs()
+            freed = 0
+            removed = 0
+            warnings = []
+            for value in results.values():
+                if not isinstance(value, dict):
+                    continue
+                try:
+                    freed += int(value.get("freed") or 0)
+                except (TypeError, ValueError):
+                    pass
+                removed += len(value.get("removed") or [])
+                if value.get("refused"):
+                    warnings.append("下载进行中，部分临时文件未删除")
+            log("maintenance cleanup: target=%s, removed %d files, freed %.1f MB"
+                % (target, removed, freed / 1024.0 / 1024.0))
+            payload = {"ok": True, "target": target, "results": results,
+                       "removed": removed, "freed": freed}
+            if warnings:
+                payload["warnings"] = warnings
             self.send_json(payload)
             return
 
@@ -2029,6 +2261,10 @@ def main():
     threading.Thread(target=backup_thread, daemon=True).start()
     threading.Thread(target=notify_thread, daemon=True).start()
     threading.Thread(target=update_poll_thread, daemon=True).start()
+    # The installer replaces this process, so the new process is the first
+    # point guaranteed to be after an upgrade has finished. Cleaning here
+    # also sweeps up leftovers from earlier failed downloads on every start.
+    threading.Thread(target=purge_update_cache_at_start, daemon=True).start()
     log("qbpanel %s listening on %s:%d (web=%s var=%s share=%s)" % (
         VERSION, host, port, web_dir(), var_dir(), backends.share_dir() or "-"))
     try:

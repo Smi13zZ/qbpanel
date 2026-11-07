@@ -131,6 +131,15 @@
       return request(BASE + "/backup/delete", { method: "POST", body: { name: name } });
     },
 
+    /* ---- storage / cleanup ---- */
+    maintenanceStorage: function () {
+      return request(BASE + "/maintenance/storage");
+    },
+    maintenanceCleanup: function (target, extra) {
+      const body = Object.assign({ target: target }, extra || {});
+      return request(BASE + "/maintenance/cleanup", { method: "POST", body: body });
+    },
+
     /* ---- release check / one-click update ---- */
     updateCheck: function (force) {
       return request(BASE + "/update/check" + (force ? "?force=1" : ""));

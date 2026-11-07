@@ -719,6 +719,103 @@
           </div>
         </div>
 
+        <!-- ---------- storage ---------- -->
+        <div class="card" v-if="settingsTab === 'storage'">
+          <div class="card-head">
+            <h3>{{ t('settings.storage.title') }}</h3>
+            <div class="spacer"></div>
+            <button class="btn sm" :disabled="storageLoading" @click="loadStorage">
+              <span class="ic" v-html="ic('refresh')"></span>{{ storageLoading ? t('settings.storage.refreshing') : t('settings.storage.refresh') }}
+            </button>
+          </div>
+          <div class="hint" style="margin-top:2px">{{ t('settings.storage.desc') }}</div>
+
+          <div class="storage-total">
+            <span class="k">{{ t('settings.storage.total') }}</span>
+            <b class="mono">{{ fmt.fmtBytes(storageData.total) }}</b>
+            <span class="faint mono">{{ storageData.var_dir || '' }}</span>
+          </div>
+
+          <div class="bscroll storage-scroll" v-if="(storageData.items || []).length">
+            <table class="ttable tstorage">
+              <thead>
+                <tr>
+                  <th>{{ t('settings.storage.item') }}</th>
+                  <th class="num" style="width:92px">{{ t('settings.storage.size') }}</th>
+                  <th class="num hide-sm" style="width:76px">{{ t('settings.storage.files') }}</th>
+                  <th class="hide-md" style="width:150px">{{ t('settings.storage.act') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="it in storageData.items" :key="it.key" :class="{ faint: !it.bytes }">
+                  <td class="bcname">
+                    <div class="ellipsis">{{ it.label }}</div>
+                    <div class="sub mono ellipsis" :title="it.path">{{ it.path }}</div>
+                  </td>
+                  <td class="num mono">{{ it.bytes ? fmt.fmtBytes(it.bytes) : '—' }}</td>
+                  <td class="num mono hide-sm">{{ it.files || '—' }}</td>
+                  <td class="hide-md">
+                    <button class="btn sm" v-if="it.key === 'updates' && it.bytes"
+                            :disabled="!!storageBusy" @click="askCleanup('updates')">
+                      {{ t('settings.storage.cleanUpdates') }}
+                    </button>
+                    <span class="faint" v-else-if="it.key === 'updates'">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="sep"></div>
+          <div class="row wrap" style="gap:8px">
+            <button class="btn" :disabled="!!storageBusy" @click="askCleanup('updates')">
+              <span class="ic" v-html="ic(storageBusy === 'updates' ? 'refresh' : 'trash')"></span>
+              {{ t('settings.storage.cleanUpdates') }}
+            </button>
+            <span class="faint" style="font-size:12.5px"
+                  :title="t('settings.storage.keepHint', { n: storageData.updates_keep })">
+              {{ t('settings.storage.keepLabel', { n: storageData.updates_keep || 2 }) }}
+            </span>
+            <button class="btn" :disabled="!!storageBusy" @click="askCleanup('logs')">
+              <span class="ic" v-html="ic(storageBusy === 'logs' ? 'refresh' : 'trash')"></span>
+              {{ t('settings.storage.cleanLogs') }}
+            </button>
+            <div class="spacer"></div>
+            <button class="btn danger" :disabled="!!storageBusy" @click="askCleanup('all')">
+              {{ t('settings.storage.cleanAll') }}
+            </button>
+          </div>
+
+          <div class="hint" style="margin-top:12px">{{ t('settings.storage.hintLogs') }}</div>
+
+          <h4 style="margin-top:18px;margin-bottom:8px">{{ t('settings.storage.updatesTitle') }}</h4>
+          <div class="faint" v-if="!(storageData.updates || []).length">{{ t('settings.storage.updatesEmpty') }}</div>
+          <div class="bscroll storage-scroll" v-else>
+            <table class="ttable tstorage">
+              <thead>
+                <tr>
+                  <th>{{ t('settings.storage.pkg') }}</th>
+                  <th class="num" style="width:92px">{{ t('settings.storage.size') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="u in storageData.updates" :key="u.name">
+                  <td class="bcname">
+                    <div class="mono ellipsis" :title="u.name">
+                      {{ u.name }}
+                      <span class="chip" v-if="u.partial" style="margin-left:6px">{{ t('settings.storage.partial') }}</span>
+                      <span class="chip" v-else-if="storageData.current_version && u.name.indexOf(storageData.current_version) >= 0" style="margin-left:6px">{{ t('settings.storage.inUse') }}</span>
+                    </div>
+                    <div class="sub">{{ u.t ? fmt.fmtDate(u.t) : '—' }}</div>
+                  </td>
+                  <td class="num mono">{{ fmt.fmtBytes(u.bytes) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="hint" style="margin-top:10px">{{ t('settings.storage.hintUpdates', { n: storageData.updates_keep || 2 }) }}</div>
+        </div>
+
         <!-- ---------- notifications ---------- -->
         <div class="card" v-if="settingsTab === 'notify'">
           <div class="card-head">

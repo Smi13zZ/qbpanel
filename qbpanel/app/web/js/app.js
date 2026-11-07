@@ -234,6 +234,9 @@
 
         /* settings is a sectioned work bar now - one card group at a time */
         settingsTab: "panel",
+        storageData: { items: [], total: 0, updates: [] },
+        storageLoading: false,
+        storageBusy: "",
         updateInfo: null,
         updateError: "",
         updateChecking: false,
@@ -321,6 +324,7 @@
         const out = [
           { id: "panel", label: t("settings.tab.panel") },
           { id: "maintenance", label: t("settings.tab.maintenance") },
+          { id: "storage", label: t("settings.tab.storage") },
           { id: "notify", label: t("settings.tab.notify") },
           { id: "update", label: t("settings.tab.update") },
         ];
@@ -511,6 +515,7 @@
       settingsTab: function (v) {
         if (v === "update" && !this.updateInfo) this.checkUpdate(false);
         if (v === "notify") this.loadNotify();
+        if (v === "storage") this.loadStorage();
       },
       notifyLogFilter: function () { this.$nextTick(this.measureNotifyLog); },
       lang: function () { this.$nextTick(this.measureNotifyLog); },
@@ -1472,6 +1477,87 @@ serverName: function () {
             }
           },
         };
+      },
+
+      /* ---------------- storage / cleanup ---------------- */
+      loadStorage: async function () {
+        this.storageLoading = true;
+        try {
+          const d = await API.maintenanceStorage();
+          this.storageData = d || { items: [], total: 0, updates: [] };
+        } catch (e) {
+          if (!this.storageData || !this.storageData.items) {
+            this.storageData = { items: [], total: 0, updates: [] };
+          }
+        } finally {
+          this.storageLoading = false;
+        }
+      },
+      /* 清理前先确认，再调接口，最后刷新统计。 */
+      askCleanup: function (target) {
+        const self = this;
+        const titles = {
+          updates: "settings.storage.cleanUpdates",
+          logs: "settings.storage.cleanLogs",
+          all: "settings.storage.cleanAll",
+        };
+        const texts = {
+          updates: "settings.storage.cleanUpdatesText",
+          logs: "settings.storage.cleanLogsText",
+          all: "settings.storage.cleanAllText",
+        };
+        const freed = this.storageTotalFor(target);
+        this.confirmBox = {
+          title: this.t(titles[target] || titles.all),
+          text: this.t(texts[target] || texts.all, { v: this.fmt.fmtBytes(freed) }),
+          okText: this.t("settings.storage.cleanOk"),
+          onOk: async function () {
+            self.confirmBox = null;
+            await self.runCleanup(target);
+          },
+        };
+      },
+      /* 当前运行版本的安装包受后端保护，不计入可回收空间。 */
+      storageTotalFor: function (target) {
+        const items = (this.storageData && this.storageData.items) || [];
+        const pick = (keys) => items
+          .filter(function (it) { return keys.indexOf(it.key) >= 0; })
+          .reduce(function (sum, it) { return sum + (Number(it.bytes) || 0); }, 0);
+        let updates = pick(["updates"]);
+        const cur = (this.storageData && this.storageData.current_version) || "";
+        if (cur) {
+          ((this.storageData && this.storageData.updates) || []).forEach(function (u) {
+            if (u && !u.partial && String(u.name || "").indexOf(cur) >= 0) {
+              updates = Math.max(0, updates - (Number(u.bytes) || 0));
+            }
+          });
+        }
+        const logs = pick(["panel_log", "panel_log1", "update_log"]);
+        if (target === "updates") return updates;
+        if (target === "logs") return logs;
+        return updates + logs;
+      },
+      runCleanup: async function (target) {
+        if (this.storageBusy) return;
+        this.storageBusy = target;
+        try {
+          const payload = { target: target };
+          if (target === "updates" || target === "all") {
+            payload.keep = Number(this.storageData.updates_keep) || 2;
+          }
+          if (target === "logs" || target === "all") payload.which = "all";
+          const r = await API.maintenanceCleanup(target, payload);
+          const freed = (r && Number(r.freed)) || 0;
+          this.toast(this.t("settings.storage.cleaned", { v: this.fmt.fmtBytes(freed) }));
+          if (r && r.warnings && r.warnings.length) {
+            this.toast(String(r.warnings[0]), "err");
+          }
+          await this.loadStorage();
+        } catch (e) {
+          this.toast(this.t("settings.storage.cleanFailed", { v: e.message }), "err");
+        } finally {
+          this.storageBusy = "";
+        }
       },
 
       /* ---------------- release check ----------------

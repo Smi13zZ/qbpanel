@@ -454,6 +454,32 @@ input[type="number"] { -moz-appearance: textfield; }
    more than a third of the row and every entry starts with it anyway */
 .ttable.tbackup .bname-short { display: none; }
 .ttable .sub { font-size: 12px; color: var(--faint); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------------- storage ---------------- */
+/* The storage tables size themselves to their content: a handful of rows,
+   so no fixed 246px viewport like the backup list needs. On short screens
+   the pair of tables can still scroll together. */
+.bscroll.storage-scroll { max-height: none; overflow-y: visible; }
+@media (max-height: 900px) {
+  .bscroll.storage-scroll { max-height: 330px; overflow-y: auto; }
+}
+.ttable.tstorage { table-layout: fixed; }
+.ttable.tstorage thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--card); border-bottom: 1px solid var(--border);
+}
+.ttable.tstorage tbody td { height: 46px; padding-top: 0; padding-bottom: 0; }
+.ttable.tstorage .bcname { min-width: 0; }
+.ttable.tstorage .bcname .sub { font-size: 11px; margin-top: 2px; color: var(--faint); }
+.storage-total {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 14px 0 12px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--muted);
+}
+.storage-total .k { font-size: 12.5px; color: var(--dim); }
+.storage-total b { font-size: 19px; font-variant-numeric: tabular-nums; }
+.storage-total .faint { font-size: 11.5px; word-break: break-all; min-width: 0; }
 .ttable .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .ttable .acts { text-align: right; white-space: nowrap; }
 .ttable .acts .btn {
@@ -934,6 +960,18 @@ canvas { display: block; width: 100%; height: 100%; }
   .ttable.tbackup .bname-full { display: none; }
   .ttable.tbackup .bname-short { display: inline; }
   .ttable.tbackup .acts { width: 120px !important; }
+
+  /* Storage rows on a phone: the action column is too narrow to keep, the
+     cleanup buttons below the table cover it. Size stays visible - that is
+     the whole point of this page - while paths compress to one line. */
+  .storage-total { flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; }
+  .storage-total b { font-size: 17px; }
+  .storage-total .faint { font-size: 10.5px; }
+  .ttable.tstorage th, .ttable.tstorage td { padding-left: 8px; padding-right: 8px; }
+  .ttable.tstorage tbody td { height: 40px; }
+  .ttable.tstorage .bcname .sub { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+  .ttable.tstorage thead th { font-size: 11.5px; padding-top: 6px; padding-bottom: 6px; }
+  .storage-scroll .btn.sm { padding: 0 8px; font-size: 12px; }
 
   /* Log entry: timestamp renders as one line "YYYY-MM-DD HH:MM" with the
      message wrapping below - once the message stopped forcing horizontal
