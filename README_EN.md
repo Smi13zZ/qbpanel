@@ -246,8 +246,8 @@ qbpanel/
 ```
 
 ```bash
-python tools/build_fpk.py            # pack + push to the device
-python tools/build_fpk.py --no-push  # pack only
+python tools/build_fpk.py            # pack + verify + push to the device
+python tools/build_fpk.py --no-push  # pack + verify only
 ```
 
 > ⚠️ **Never repack the tar by hand on Windows**: it breaks the archive format

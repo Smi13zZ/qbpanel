@@ -74,7 +74,11 @@ QBPANEL_PORT=8898 python3 qbpanel.py
 
 CI 下载官方 `fnpack-1.2.3-linux-amd64`（`https://static2.fnnas.com/fnpack/`），把 `qbpanel/` 拷到 `/tmp/build` 后统一修权限（目录 755、文件 644、`cmd/*` 与 `app/ui/index.cgi` 755）再 `fnpack build`。
 
-**本地兜底**：`python tools/build_fpk.py` 走 `remote.py` 把源码同步到设备上打包，需要 `..\.workbuddy\scripts\remote.py` 与本机 Python 环境。
+**本地兜底**：`python tools/build_fpk.py` 把源码 tar 走 `scp` 同步到设备，在那侧 `fnpack build` 后取回，再自动跑一遍 `verify_fpk.py`。
+
+- `--host` 填 `~/.ssh/config` 里的别名（默认 `fnos-test`），走密钥认证，`BatchMode` 下缺密钥直接报错而不是卡密码提示。
+- `--no-push` 只出包并校验，不动设备的部署目录；`--deploy-dir` 可改推送位置。
+- 远端脚本经 `ssh <host> bash -s` 从 stdin 送入，**不要改回拼 `argv` 字符串**：`find -exec chmod {} \;` 里的花括号与分号过 shell 引用会散架。`_run()` 也必须按字节喂 stdin，文本模式会把 `\n` 改写成 `\r\n`，远端 bash 会报 `set: -: invalid option`。
 
 **不要在 Windows 上手工重新打 tar 包** —— 会破坏归档格式，安装时报 `code 10111`。打完用 `python tools/verify_fpk.py <file.fpk>` 自检结构：manifest 版本号与文件名一致、`cmd/*` 与 `ui/index.cgi` 可执行位、内层关键文件齐全。
 

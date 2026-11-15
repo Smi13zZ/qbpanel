@@ -10,7 +10,15 @@ Why this runs fnpack on the NAS instead of locally:
   * The NAS already has the official Linux fnpack, so shipping the sources
     there, fixing modes and building in place is the reliable path.
 
-Usage:  python tools/build_fpk.py [--host 192.168.1.13]
+Transport is plain `ssh` / `scp` against the host alias from ~/.ssh/config.
+The remote script goes in over stdin, not as an argv element: the permission
+fix uses `find ... -exec chmod 755 {} \\;`, and that brace/semicolon pair gets
+mangled by shell quoting long before it reaches the device.
+
+Usage:
+    python tools/build_fpk.py                        # build + push to the device
+    python tools/build_fpk.py --no-push              # build only
+    python tools/build_fpk.py --host fnos-test       # pick another alias
 """
 import argparse
 import os
@@ -21,10 +29,12 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "qbpanel")
-REMOTE_PY = os.path.abspath(
-    os.path.join(ROOT, "..", ".workbuddy", "scripts", "remote.py")
-)
-VENV_PY = r"C:/Users/PVE/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
+DEFAULT_HOST = "fnos-test"
+DEFAULT_DEPLOY_DIR = "/vol1/1000/development/qbpanel"
+REMOTE_TAR = "/tmp/qbpanel-src.tar"
+
+# BatchMode keeps a missing key an error instead of a password prompt.
+SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
 
 
 def version_of():
@@ -70,54 +80,67 @@ def _skip(ti):
     return ti
 
 
-def _run(argv):
-    env = dict(os.environ, MSYS_NO_PATHCONV="1")
-    out = subprocess.run(argv, capture_output=True, text=True, env=env)
-    sys.stdout.write(out.stdout)
-    if out.stderr:
-        sys.stderr.write(out.stderr)
+def _run(argv, stdin=None):
+    """Run a command, feeding stdin as raw bytes.
+
+    Text mode would rewrite "\\n" to "\\r\\n" on the way into the child, and a
+    CRLF shell script on the device dies on `set: -: invalid option` and
+    `unknown command "build\\r"`. Bytes keep the line endings we wrote.
+    """
+    payload = None if stdin is None else stdin.encode("utf-8")
+    out = subprocess.run(argv, input=payload, capture_output=True)
+    # Device consoles are GBK; decoding must never raise or the real failure
+    # message gets swallowed by the reader.
+    text = (out.stdout or b"").decode("utf-8", "replace")
+    err = (out.stderr or b"").decode("utf-8", "replace")
+    sys.stdout.write(text)
+    if err:
+        sys.stderr.write(err)
+    out.stdout, out.stderr = text, err
     return out
 
 
-def remote(host, cmd, sudo=True):
-    argv = [VENV_PY, REMOTE_PY]
-    if host:
-        argv += ["--host", host]
-    if sudo:
-        argv.append("--sudo")
-    argv.append(cmd)
-    out = _run(argv)
+def remote(host, script):
+    """Run a bash script on <host>. The body arrives on stdin, unquoted."""
+    out = _run(["ssh"] + SSH_OPTS + [host, "bash -s"], stdin=script)
     if out.returncode != 0:
         raise SystemExit("remote command failed (exit %d)" % out.returncode)
     return out.stdout
 
 
 def put(host, local, dest):
-    argv = [VENV_PY, REMOTE_PY]
-    if host:
-        argv += ["--host", host]
-    # remote.py wants native Windows paths, but backslashes confuse the
-    # argument handling - forward slashes work everywhere.
-    argv += ["--put", local.replace("\\", "/"), dest]
-    out = _run(argv)
+    out = _run(["scp", "-q"] + SSH_OPTS + [local, "%s:%s" % (host, dest)])
     if out.returncode != 0:
         raise SystemExit("upload failed (exit %d)" % out.returncode)
 
 
 def get(host, src, local):
-    argv = [VENV_PY, REMOTE_PY]
-    if host:
-        argv += ["--host", host]
-    argv += ["--get", src, local.replace("\\", "/")]
-    out = _run(argv)
+    out = _run(["scp", "-q"] + SSH_OPTS + ["%s:%s" % (host, src), local])
     if out.returncode != 0:
         raise SystemExit("download failed (exit %d)" % out.returncode)
 
 
+def verify(out_path):
+    """Reuse the same structural check CI runs; a package that fails it is a
+    broken delivery, not a warning."""
+    checker = os.path.join(ROOT, "tools", "verify_fpk.py")
+    out = _run([sys.executable, checker, out_path])
+    if out.returncode != 0:
+        raise SystemExit("verify_fpk failed (exit %d)" % out.returncode)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="192.168.1.13")
+    ap.add_argument("--host", default=DEFAULT_HOST,
+                    help="ssh alias / host (default: %s)" % DEFAULT_HOST)
     ap.add_argument("--workdir", default="/tmp/qbpanel-build")
+    ap.add_argument("--deploy-dir", default=DEFAULT_DEPLOY_DIR,
+                    help="device directory the package is copied to (default: %s)"
+                    % DEFAULT_DEPLOY_DIR)
+    ap.add_argument("--no-push", action="store_true",
+                    help="build and verify only, leave the device directory alone")
+    ap.add_argument("--no-verify", action="store_true",
+                    help="skip the local verify_fpk.py step")
     args = ap.parse_args()
 
     # Guard: the local dev config holds credentials and must never be packed.
@@ -131,6 +154,8 @@ def main():
     ver = version_of()
     app = appname_of()
     plat = platform_of()
+    wd = args.workdir.rstrip("/")
+
     tmp_tar = os.path.join(tempfile.gettempdir(), "qbpanel-src.tar")
     with tarfile.open(tmp_tar, "w") as tf:
         for name in sorted(os.listdir(SRC)):
@@ -139,30 +164,45 @@ def main():
             tf.add(os.path.join(SRC, name), arcname=name, filter=_skip)
     print("packed sources ->", tmp_tar)
 
-    remote_tar = "/tmp/qbpanel-src.tar"
-    put(args.host, tmp_tar, remote_tar)
-    remote(
-        args.host,
-        "rm -rf {wd} && mkdir -p {wd} && tar -xf {tar} -C {wd} && cd {wd} && "
-        "find . -type d -exec chmod 755 {{}} \\; && "
-        "find . -type f -exec chmod 644 {{}} \\; && "
-        "chmod 755 cmd/* app/ui/index.cgi && "
-        "fnpack build && ls -la {app}.fpk".format(wd=args.workdir, tar=remote_tar, app=app),
-    )
+    put(args.host, tmp_tar, REMOTE_TAR)
+
+    # cmd/* and app/ui/index.cgi must stay executable or fnOS refuses the
+    # install; every other member goes back to 644.
+    remote(args.host, """set -eu
+WD={wd}
+rm -rf "$WD"
+mkdir -p "$WD"
+tar -xf {tar} -C "$WD"
+cd "$WD"
+find . -type d -exec chmod 755 {{}} \\;
+find . -type f -exec chmod 644 {{}} \\;
+chmod 755 cmd/* app/ui/index.cgi
+fnpack build
+ls -la {app}.fpk
+""".format(wd=wd, tar=REMOTE_TAR, app=app))
 
     out_name = "%s-%s-fnos-%s.fpk" % (app, ver, plat)
     out_path = os.path.join(ROOT, out_name)
-    get(args.host, "%s/%s.fpk" % (args.workdir, app), out_path)
+    get(args.host, "%s/%s.fpk" % (wd, app), out_path)
     print("built:", out_path, os.path.getsize(out_path), "bytes")
 
-    # Remote paths must use forward slashes - os.path.join would emit a
-    # backslash on Windows and the remote shell would see one long filename.
-    keep = args.workdir.rstrip("/") + "/%s.fpk" % app
-    remote(
-        args.host,
-        "cp -f {k} /vol1/1000/development/qbpanel/{app}-{v}.fpk && "
-        "ls -la /vol1/1000/development/qbpanel/".format(k=keep, v=ver, app=app),
-    )
+    if args.no_verify:
+        print("--no-verify: skipped the structural check")
+    else:
+        verify(out_path)
+
+    if args.no_push:
+        print("--no-push: left %s untouched" % args.deploy_dir)
+        return
+
+    # The deploy directory is mode 000 on the test box but owned by the login
+    # user, so a plain cp normally works; sudo -n is only a fallback.
+    remote(args.host, """set -eu
+mkdir -p {d}
+cp -f {k} {d}/{app}-{v}.fpk 2>/dev/null || sudo -n cp -f {k} {d}/{app}-{v}.fpk
+ls -la {d}/
+""".format(d=args.deploy_dir.rstrip("/"), k="%s/%s.fpk" % (wd, app),
+           app=app, v=ver))
 
 
 if __name__ == "__main__":

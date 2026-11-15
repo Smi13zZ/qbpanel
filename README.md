@@ -299,7 +299,8 @@ CI 用官方 `fnpack-1.2.3-linux-amd64`（<https://static2.fnnas.com/fnpack/>）
 ### 本地打包（备用）
 
 ```bash
-python tools/build_fpk.py           # 走 remote.py 把源码同步到飞牛设备用 fnpack 打包
+python tools/build_fpk.py           # 走 ssh/scp 把源码同步到飞牛设备用 fnpack 打包，取回后自动校验
+python tools/build_fpk.py --no-push # 只出包 + 校验，不推送部署目录
 python tools/verify_fpk.py *.fpk    # 自检：版本号、可执行位、关键文件
 ```
 
