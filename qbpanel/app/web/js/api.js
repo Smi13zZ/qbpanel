@@ -72,19 +72,12 @@
   const API = {
     base: BASE,
 
-    health: function () {
-      return request(BASE + "/health");
-    },
-
     /* ---- panel configuration ---- */
     config: function () {
       return request(BASE + "/config");
     },
     saveSettings: function (settings) {
       return request(BASE + "/config", { method: "POST", body: { settings: settings } });
-    },
-    servers: function () {
-      return request(BASE + "/servers");
     },
     addServer: function (srv) {
       return request(BASE + "/servers", { method: "POST", body: srv });

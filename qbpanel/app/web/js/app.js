@@ -245,8 +245,11 @@
         updateInstallVersion: "",
         updateProgressDone: 0,
         updateProgressTotal: 0,
-        updateInstallPhase: "",
         updateInstallDetail: "",
+        /* tail of update/install.log, straight from /api/update/status. The
+           server has always sent it; the card only had a one-line error to
+           show, which left the actual reason unreachable without SSH. */
+        updateInstallLog: "",
         updateTimer: null,
 
         /* notifications */
@@ -1565,13 +1568,6 @@ serverName: function () {
          meaningful when the user opens the panel) and re-run on demand from
          the Update section. A failed check is not fatal: the panel keeps
          working and the section shows why it could not reach the feed. */
-      /* prefer the packaged .fpk asset, fall back to the release page */
-      updateAssetUrl: function () {
-        const list = (this.updateInfo && this.updateInfo.assets) || [];
-        const pkg = list.filter(function (a) { return /\.fpk$/i.test(a.name || ""); })[0];
-        if (pkg && pkg.url) return pkg.url;
-        return (this.updateInfo && this.updateInfo.html_url) || "";
-      },
       updateReleaseUrl: function () {
         return (this.updateInfo && this.updateInfo.html_url) || "";
       },
@@ -1633,10 +1629,13 @@ serverName: function () {
         this.updateError = "";
         this.updateProgressDone = 0;
         this.updateProgressTotal = 0;
-        this.updateInstallPhase = "downloading";
         this.updateInstallDetail = this.t("update.downloading");
+        this.updateInstallLog = "";
         this.updateInstallVersion = (this.updateInfo && this.updateInfo.latest) || "";
         this._updateFromVersion = this.appVersion;
+        /* 一开机就轮询，第一次读到的还可能是安装前的 idle；只有真的看到过
+           下载/安装过程，后面的 idle 才能当成「装完又退回来了」。 */
+        this._updateSawActive = false;
         /* 轮询必须先起来，再发安装请求：后端是在这个请求里同步下载安装包的，
            await 会一直挂到下载结束，等它返回才转向询的话，下载阶段一个进度都
            看不到。 */
@@ -1644,7 +1643,6 @@ serverName: function () {
         try {
           const r = await API.installUpdate();
           if (r && r.ok === false) throw new Error((r && r.error) || "install failed");
-          if (r && r.phase) this.applyUpdateState(r);
         } catch (e) {
           clearTimeout(this.updateTimer);
           this.updateInstalling = false;
@@ -1658,17 +1656,30 @@ serverName: function () {
       applyUpdateState: function (st) {
         if (!st) return;
         const prevPct = this.updateProgressPct;
-        const phase = st.phase || "downloading";
-        this.updateInstallPhase = phase;
         if (typeof st.done === "number") this.updateProgressDone = Math.max(this.updateProgressDone || 0, st.done);
         if (typeof st.total === "number") this.updateProgressTotal = st.total;
-        if (st.detail) this.updateInstallDetail = st.detail;
-        if (phase === "downloading") {
-          this.updateInstallDetail = this.t("update.downloading");
-        } else if (phase === "installing") {
+        /* 阶段文案由前端按语言拼：服务端只给语言中立的文件名，界面才不会
+           在英文下冒出中文句子。detail 只在下载失败时才有意义（翻译好的
+           原因），成功路径上一律为空。 */
+        if (st.phase === "downloading") {
+          this.updateInstallDetail = st.file
+            ? this.t("update.downloadingFile", { file: st.file })
+            : this.t("update.downloading");
+        } else if (st.phase === "installing") {
           this.updateInstallDetail = this.t("update.restarting");
+          /* 安装重启阶段没有可测总量，把 total 清零让进度区切成「准备中」，
+             不假装还有百分比；进度条留在下载结束的 100% 也不再回退。 */
           this.updateProgressTotal = 0;
+        } else if (st.detail) {
+          this.updateInstallDetail = st.detail;
         }
+        /* install.log 是追加写的，下载阶段里面留着的还是上一次的记录。这时候
+           贴出来会让人以为刚刚发生了「回滚」，所以在安装脚本真正开跑之前一律
+           不显示，只有 installing 及之后才把它挂到卡片上。 */
+        if (typeof st.log === "string") {
+          this.updateInstallLog = st.phase === "downloading" ? "" : st.log;
+        }
+        if (st.phase === "downloading" || st.phase === "installing") this._updateSawActive = true;
         /* 阶段文案由服务端 detail 覆盖时也要保证百分比不回退 */
         if (this.updateProgressPct < prevPct) {
           this.updateProgressDone = Math.round(prevPct / 100 * (this.updateProgressTotal || 0));
@@ -1685,11 +1696,14 @@ serverName: function () {
             const st = await API.updateStatus();
             misses = 0;
             if (st && st.phase === "failed") {
+              /* 下载/校验阶段的失败：此时安装脚本还没跑过，install.log 里
+                 留着的是上一次的记录，贴出来只会把人引到别的原因上，所以
+                 这一条只报翻译后的原因本身。 */
               self.updateInstalling = false;
               self.updateError = self.t("update.installFailed", { v: st.detail || "" });
+              self.updateInstallDetail = "";
               return;
             }
-            self.applyUpdateState(st);
             /* 新版本已上线：面板报告的版本号不再是安装前那个。
                用「与起始版本不同」判断，比精确匹配目标版本号更耐得住
                tag 带前缀或资产名与版本号不完全一致的情况。 */
@@ -1697,6 +1711,25 @@ serverName: function () {
               self.finishUpdate(st.current);
               return;
             }
+            /* 升级中途面板被换掉、新版本却没起来时，脚本会装回旧包再启动。
+               于是回到这里的是「同一个版本 + 全新的 idle 状态」，而内存里
+               的 updateInstalling 还是 true —— 原先会一直轮询下去，弹窗永远
+               不消失。看到安装过程已经结束（idle）且版本没变，就按失败处理，
+               并把 install.log 里的回滚记录留给卡片。 */
+            if (st && st.phase === "idle" && self._updateSawActive) {
+              const tail = (st.log || "").trim();
+              /* 只有脚本真的进了回滚分支才说「已回滚」；进程被别的原因重启、
+                 或装机超时，日志里没有这一行，就该提示去应用中心确认。 */
+              const rolled = /rolling back/.test(tail);
+              self.updateInstalling = false;
+              self.updateError = self.t("update.installFailed", {
+                v: self.t(rolled ? "update.rolledBack" : "update.installTimeout"),
+              });
+              self.updateInstallLog = tail;
+              self.updateInstallDetail = "";
+              return;
+            }
+            self.applyUpdateState(st);
           } catch (e) {
             misses += 1;
             if (misses > 180) {
@@ -1718,7 +1751,6 @@ serverName: function () {
         const self = this;
         this.updateProgressTotal = 100;
         this.updateProgressDone = 100;
-        this.updateInstallPhase = "done";
         this.updateInstallDetail = this.t("update.done", { v: version || "" });
         setTimeout(function () {
           self.updateInstalling = false;

@@ -276,19 +276,31 @@ def release_settings():
 
 
 def describe_error(exc):
+    """One line the user can act on, for any network failure.
+
+    Used by the release lookup and the package download alike, so the same
+    failure reads the same way wherever it surfaces. Anything unrecognised
+    falls through to the raw text rather than hiding it.
+    """
     if isinstance(exc, urllib.error.HTTPError):
         if exc.code == 403:
             return "HTTP 403（GitHub 接口限流）"
         if exc.code == 404:
             return "HTTP 404（仓库或发布不存在）"
         return "HTTP %d" % exc.code
+    # urllib wraps the real cause: unwrap once and read it with the rules below
     if isinstance(exc, urllib.error.URLError):
-        reason = getattr(exc, "reason", None) or exc
-        if isinstance(reason, socket.timeout):
-            return "请求超时"
-        return str(reason)
+        return describe_error(getattr(exc, "reason", None) or exc)
     if isinstance(exc, socket.timeout):
         return "请求超时"
+    if isinstance(exc, socket.gaierror):
+        return "域名解析失败，请检查设备的网络与 DNS 设置"
+    if isinstance(exc, ConnectionRefusedError):
+        return "连接被拒绝，对方没有应答"
+    if isinstance(exc, ConnectionResetError):
+        return "连接被中断，请重试"
+    if isinstance(exc, ssl.SSLError):
+        return "TLS 握手失败，请检查设备的证书与时间"
     return str(exc) or exc.__class__.__name__
 
 
@@ -1066,11 +1078,11 @@ def clear_panel_logs():
 # --------------------------------------------------------------------------
 UPDATE_DIR = os.path.join(var_dir(), "update")
 UPDATE_STATE = {"phase": "idle", "version": "", "detail": "", "at": 0,
-                "done": 0, "total": 0}
+                "done": 0, "total": 0, "file": ""}
 UPDATE_LOCK = threading.Lock()
 
 
-def _set_update(phase, version="", detail="", done=None, total=None):
+def _set_update(phase, version="", detail="", done=None, total=None, file=None):
     with UPDATE_LOCK:
         UPDATE_STATE.update({
             "phase": phase,
@@ -1078,6 +1090,10 @@ def _set_update(phase, version="", detail="", done=None, total=None):
             "detail": detail,
             "at": int(time.time()),
         })
+        # The package name is language-neutral, so the browser can put it into
+        # its own translated sentence instead of echoing the Chinese detail.
+        if file is not None:
+            UPDATE_STATE["file"] = file
         # Byte counters drive the progress bar. A new download seeds them to 0/0
         # and the download loop fills them in; later phases (installing, failed)
         # leave them at whatever the download ended on, so the bar keeps showing
@@ -1255,19 +1271,28 @@ def start_update():
         return {"ok": False, "error": "无法创建下载目录：%s" % exc}
     name = os.path.basename(asset["name"]) or "qBpanel-update.fpk"
     dest = os.path.join(UPDATE_DIR, name)
-    _set_update("downloading", info["latest"], "正在下载 %s" % name, done=0, total=0)
+    # Start every attempt with an empty install.log: the file is appended to by
+    # the detached script, and leaving the previous run in place would make the
+    # card show last time's rollback lines while this download is still going.
+    try:
+        with open(os.path.join(UPDATE_DIR, "install.log"), "wb"):
+            pass
+    except OSError:
+        pass
+    _set_update("downloading", info["latest"], "", done=0, total=0, file=name)
 
     def _on_dl(done, total):
-        _set_update("downloading", info["latest"], "正在下载 %s" % name,
-                    done=done, total=total)
+        _set_update("downloading", info["latest"], "",
+                    done=done, total=total, file=name)
 
     try:
         download_file(asset["url"], dest, on_progress=_on_dl)
         validate_fpk(dest)
     except Exception as exc:
-        _set_update("failed", info["latest"], str(exc))
+        reason = describe_error(exc)
+        _set_update("failed", info["latest"], reason)
         log("update download failed: %r" % (exc,))
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": reason}
 
     prev = ""
     try:
@@ -1298,9 +1323,10 @@ def start_update():
             start_new_session=True,
         )
     except Exception as exc:
-        _set_update("failed", info["latest"], "无法启动安装脚本：%s" % exc)
-        return {"ok": False, "error": "无法启动安装脚本：%s" % exc}
-    _set_update("installing", info["latest"], "安装包已就绪，正在重启服务")
+        reason = "无法启动安装脚本：%s" % describe_error(exc)
+        _set_update("failed", info["latest"], reason)
+        return {"ok": False, "error": reason}
+    _set_update("installing", info["latest"], "", file=name)
     log("one-click update started -> %s" % info["latest"])
     return {"ok": True, "version": info["latest"], "file": name}
 

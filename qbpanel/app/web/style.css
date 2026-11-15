@@ -356,7 +356,6 @@ input[type="number"] { -moz-appearance: textfield; }
 .mono { font-family: var(--mono); font-size: 12px; }
 .dim { color: var(--dim); }
 .faint { color: var(--faint); }
-.nowrap { white-space: nowrap; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row { display: flex; align-items: center; gap: 10px; }
 .row.wrap { flex-wrap: wrap; }
@@ -621,6 +620,22 @@ input[type="number"] { -moz-appearance: textfield; }
 .vstatus.has {
   border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
   background: color-mix(in srgb, var(--warn) 8%, var(--card));
+}
+/* 安装日志：卡片里的一块只读输出。等宽字体 + 保留换行，行数不多（12 行），
+   短日志不滚动，超过一定高度才出现滚动条。 */
+.upinstalllog { margin-top: 12px; }
+.upinstalllog-head { font-size: 12px; color: var(--faint); margin-bottom: 6px; }
+.upinstalllog-body {
+  /* 高度必须按整行算：溢出内容会画进 padding 区，所以底部 padding 挡不住
+     任何东西，能看见的高度就是 max-height 减去上 padding。7 行 × 20px +
+     上 padding 10px = 150px，第 8 行正好落在边界外，不会被切成半行。 */
+  --upinstalllog-line: 20px;
+  margin: 0; max-height: calc(7 * var(--upinstalllog-line) + 10px);
+  overflow: auto; overscroll-behavior: contain;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--muted); color: var(--dim);
+  font-family: var(--mono); font-size: 12px; line-height: var(--upinstalllog-line);
+  white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .vsic {
   flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%;
