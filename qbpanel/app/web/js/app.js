@@ -1658,13 +1658,10 @@ serverName: function () {
         const prevPct = this.updateProgressPct;
         if (typeof st.done === "number") this.updateProgressDone = Math.max(this.updateProgressDone || 0, st.done);
         if (typeof st.total === "number") this.updateProgressTotal = st.total;
-        /* 阶段文案由前端按语言拼：服务端只给语言中立的文件名，界面才不会
-           在英文下冒出中文句子。detail 只在下载失败时才有意义（翻译好的
-           原因），成功路径上一律为空。 */
+        /* 阶段文案一律由前端按当前语言拼：服务端 detail 只在失败时才有意义
+           （翻译好的原因），成功路径上是空串，直接回显会让英文界面冒出中文。 */
         if (st.phase === "downloading") {
-          this.updateInstallDetail = st.file
-            ? this.t("update.downloadingFile", { file: st.file })
-            : this.t("update.downloading");
+          this.updateInstallDetail = this.t("update.downloading");
         } else if (st.phase === "installing") {
           this.updateInstallDetail = this.t("update.restarting");
           /* 安装重启阶段没有可测总量，把 total 清零让进度区切成「准备中」，

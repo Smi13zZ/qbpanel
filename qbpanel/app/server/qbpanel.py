@@ -1078,11 +1078,11 @@ def clear_panel_logs():
 # --------------------------------------------------------------------------
 UPDATE_DIR = os.path.join(var_dir(), "update")
 UPDATE_STATE = {"phase": "idle", "version": "", "detail": "", "at": 0,
-                "done": 0, "total": 0, "file": ""}
+                "done": 0, "total": 0}
 UPDATE_LOCK = threading.Lock()
 
 
-def _set_update(phase, version="", detail="", done=None, total=None, file=None):
+def _set_update(phase, version="", detail="", done=None, total=None):
     with UPDATE_LOCK:
         UPDATE_STATE.update({
             "phase": phase,
@@ -1090,10 +1090,6 @@ def _set_update(phase, version="", detail="", done=None, total=None, file=None):
             "detail": detail,
             "at": int(time.time()),
         })
-        # The package name is language-neutral, so the browser can put it into
-        # its own translated sentence instead of echoing the Chinese detail.
-        if file is not None:
-            UPDATE_STATE["file"] = file
         # Byte counters drive the progress bar. A new download seeds them to 0/0
         # and the download loop fills them in; later phases (installing, failed)
         # leave them at whatever the download ended on, so the bar keeps showing
@@ -1279,11 +1275,10 @@ def start_update():
             pass
     except OSError:
         pass
-    _set_update("downloading", info["latest"], "", done=0, total=0, file=name)
+    _set_update("downloading", info["latest"], "", done=0, total=0)
 
     def _on_dl(done, total):
-        _set_update("downloading", info["latest"], "",
-                    done=done, total=total, file=name)
+        _set_update("downloading", info["latest"], "", done=done, total=total)
 
     try:
         download_file(asset["url"], dest, on_progress=_on_dl)
@@ -1326,9 +1321,9 @@ def start_update():
         reason = "无法启动安装脚本：%s" % describe_error(exc)
         _set_update("failed", info["latest"], reason)
         return {"ok": False, "error": reason}
-    _set_update("installing", info["latest"], "", file=name)
+    _set_update("installing", info["latest"], "")
     log("one-click update started -> %s" % info["latest"])
-    return {"ok": True, "version": info["latest"], "file": name}
+    return {"ok": True, "version": info["latest"]}
 
 
 

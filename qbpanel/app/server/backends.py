@@ -23,7 +23,7 @@ APP_NAME = "fn-qbpanel"
 LEGACY_APP_NAMES = ("qbpanel",)
 # cmd/main exports the version read from the fpk manifest, so the panel always
 # reports the packaged version instead of a hand-maintained constant.
-VERSION = os.environ.get("QBPANEL_VERSION") or "26.11.15"
+VERSION = os.environ.get("QBPANEL_VERSION") or "26.11.16"
 
 
 # --------------------------------------------------------------------------
