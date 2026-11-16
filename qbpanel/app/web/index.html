@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.16">
+<link rel="stylesheet" href="./style.css?v=26.11.17">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -103,6 +103,21 @@
         <button class="btn sm primary" type="button" @click="installUpdate">{{ t('update.oneClick') }}</button>
         <button class="icon-btn ghost upbanner-x" type="button" :title="t('update.dismiss')"
                 @click="dismissUpdateBanner">
+          <span v-html="ic('close')"></span>
+        </button>
+      </div>
+
+      <!-- ---------- 更新失败：任意页面都要能看到 ----------
+           从概览页顶部横幅点「一键更新」失败时，用户并不在设置页，而失败提示
+           原先只渲染在设置-更新的卡片里 —— 结果界面上一个字都没有，看起来像什
+           么都没发生。这条独立于设置页，带「查看详情」直接跳过去。 -->
+      <div class="upfail" v-if="updateFailText">
+        <span class="upfail-ic" v-html="ic('close')"></span>
+        <div class="upfail-text">{{ updateFailText }}</div>
+        <div class="spacer"></div>
+        <button class="btn sm" type="button" @click="openUpdateSection">{{ t('update.bannerDetail') }}</button>
+        <button class="icon-btn ghost upbanner-x" type="button" :title="t('update.dismissFail')"
+                @click="dismissUpdateFail">
           <span v-html="ic('close')"></span>
         </button>
       </div>
@@ -749,7 +764,7 @@
               <tbody>
                 <tr v-for="it in storageData.items" :key="it.key" :class="{ faint: !it.bytes }">
                   <td class="bcname">
-                    <div class="ellipsis">{{ it.label }}</div>
+                    <div class="ellipsis">{{ t('settings.storage.row.' + it.key) }}</div>
                     <div class="sub mono ellipsis" :title="it.path">{{ it.path }}</div>
                   </td>
                   <td class="num mono">{{ it.bytes ? fmt.fmtBytes(it.bytes) : '—' }}</td>
@@ -1001,7 +1016,7 @@
             <dt>{{ t('update.publishedAt') }}</dt>
             <dd>{{ updateInfo && updateInfo.published_at ? updateInfo.published_at.slice(0, 10) : '—' }}</dd>
           </dl>
-          <div class="hint" style="margin-top:12px">{{ t('update.hint') }}</div>
+          <div class="hint" style="margin-top:12px">{{ t(updateRollbackReady ? 'update.hint' : 'update.hintNoRollback') }}</div>
           <div class="hint">{{ t('update.autoCheck') }}</div>
         </div>
       </template>
@@ -1479,10 +1494,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.11.16"></script>
-<script src="./js/util.js?v=26.11.16"></script>
-<script src="./js/api.js?v=26.11.16"></script>
-<script src="./js/charts.js?v=26.11.16"></script>
-<script src="./js/app.js?v=26.11.16"></script>
+<script src="./js/i18n.js?v=26.11.17"></script>
+<script src="./js/util.js?v=26.11.17"></script>
+<script src="./js/api.js?v=26.11.17"></script>
+<script src="./js/charts.js?v=26.11.17"></script>
+<script src="./js/app.js?v=26.11.17"></script>
 </body>
 </html>

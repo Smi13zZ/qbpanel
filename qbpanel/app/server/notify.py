@@ -217,16 +217,6 @@ def type_meta(lang="zh"):
     return out
 
 
-def type_list(lang="zh"):
-    out = []
-    for key, meta in CHANNEL_TYPES.items():
-        out.append({
-            "type": key,
-            "label": meta["label_zh"] if lang == "zh" else meta["label_en"],
-        })
-    return out
-
-
 def channel_public(ch):
     """Channel shape for the browser - stored secrets are replaced by a mark."""
     meta = CHANNEL_TYPES.get(ch.get("type") or "", {"secrets": (), "fields": ()})

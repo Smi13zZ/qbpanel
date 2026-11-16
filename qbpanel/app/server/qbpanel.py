@@ -275,6 +275,49 @@ def release_settings():
     return repo, base
 
 
+class UpdateError(Exception):
+    """A failure carrying a stable code so the browser can translate it.
+
+    The Chinese sentence in str(exc) stays as the fallback for the panel log
+    and for anything that does not know the code; the dotted code is what the
+    UI renders, which keeps the English interface free of Chinese text.
+    """
+
+    def __init__(self, code, detail="", arg=""):
+        Exception.__init__(self, detail or code)
+        self.code = code
+        self.arg = arg
+
+
+def error_code(exc):
+    """Stable identifier for a failure the browser can translate.
+
+    Empty string means "no known code" - the caller then shows the raw text.
+    """
+    if isinstance(exc, UpdateError):
+        return exc.code
+    if isinstance(exc, urllib.error.HTTPError):
+        if exc.code == 403:
+            return "gh403"
+        if exc.code == 404:
+            return "gh404"
+        return ""
+    if isinstance(exc, urllib.error.URLError):
+        inner = getattr(exc, "reason", None)
+        return error_code(inner) if inner is not None else ""
+    if isinstance(exc, socket.timeout):
+        return "netTimeout"
+    if isinstance(exc, socket.gaierror):
+        return "netDns"
+    if isinstance(exc, ConnectionRefusedError):
+        return "netRefused"
+    if isinstance(exc, ConnectionResetError):
+        return "netReset"
+    if isinstance(exc, ssl.SSLError):
+        return "netTls"
+    return ""
+
+
 def describe_error(exc):
     """One line the user can act on, for any network failure.
 
@@ -402,37 +445,32 @@ def check_update(force=False):
     with RELEASE_LOCK:
         cached = RELEASE_CACHE["payload"]
         if not force and cached and now - RELEASE_CACHE["at"] < RELEASE_TTL:
-            out = dict(cached)
-            out["cached"] = True
-            return out
+            return dict(cached)
         # a failed lookup is cached for a minute: without this every page load
         # retried a rate-limited API and dug the hole deeper
         if not force and RELEASE_FAIL["payload"] and now - RELEASE_FAIL["at"] < 60:
-            out = dict(RELEASE_FAIL["payload"])
-            out["cached"] = True
-            return out
+            return dict(RELEASE_FAIL["payload"])
     out = {
         "ok": True,
-        "current": VERSION,
         "latest": "",
         "has_update": False,
-        "name": "",
         "notes": "",
         "published_at": "",
         "html_url": "",
         "repo": repo,
         "assets": [],
         "checked_at": int(now),
-        "cached": False,
-        "source": "",
         "error": "",
+        "error_code": "",
     }
     rel = None
     first_error = ""
+    first_code = ""
     try:
         rel = release_from_api(repo, base)
     except Exception as exc:
         first_error = describe_error(exc)
+        first_code = error_code(exc)
         log("release api failed (%s), falling back to the feed" % first_error)
     if rel is None:
         try:
@@ -440,6 +478,7 @@ def check_update(force=False):
         except Exception as exc:
             out["ok"] = False
             out["error"] = first_error or describe_error(exc)
+            out["error_code"] = first_code or error_code(exc)
             log("release check failed: %s" % out["error"])
             with RELEASE_LOCK:
                 RELEASE_FAIL["at"] = now
@@ -449,11 +488,9 @@ def check_update(force=False):
     tag = (rel.get("tag") or "").strip()
     latest = tag[1:] if tag[:1] in ("v", "V") else tag
     out["latest"] = latest or tag
-    out["name"] = rel.get("name") or tag
     out["notes"] = (rel.get("notes") or "")[:6000]
     out["published_at"] = rel.get("published_at") or ""
     out["html_url"] = rel.get("html_url") or ""
-    out["source"] = rel.get("source") or ""
     assets = rel.get("assets") or []
     if not assets and latest:
         try:
@@ -1026,19 +1063,26 @@ def _file_size(path):
 
 
 def storage_report():
-    """Disk usage of the panel folders. Unreadable entries count as 0."""
+    """Disk usage of the panel folders. Unreadable entries count as 0.
+
+    The rows are a *view*, not a partition: install.log lives inside the update
+    folder and is listed separately as well, so adding every row double-counted
+    it (38 KB of log made the total 38 KB too high). Rows flagged nested are
+    shown but kept out of the sum.
+    """
     rows = []
-    for key, label, path, kind in (
-        ("updates", "更新包缓存", UPDATE_DIR, "dir"),
-        ("backups", "配置备份", backends.backup_dir(), "dir"),
-        ("panel_log", "面板日志", PANEL_LOG, "file"),
-        ("panel_log1", "面板日志（上一份）", PANEL_LOG + ".1", "file"),
-        ("update_log", "更新安装日志", INSTALL_LOG, "file"),
+    for key, path, kind, nested in (
+        ("updates", UPDATE_DIR, "dir", False),
+        ("backups", backends.backup_dir(), "dir", False),
+        ("panel_log", PANEL_LOG, "file", False),
+        ("panel_log1", PANEL_LOG + ".1", "file", False),
+        ("update_log", INSTALL_LOG, "file", True),
     ):
         size, files = _dir_size(path) if kind == "dir" else _file_size(path)
-        rows.append({"key": key, "label": label, "bytes": int(size),
-                     "files": int(files), "path": path, "kind": kind})
-    return {"items": rows, "total": sum(item["bytes"] for item in rows),
+        rows.append({"key": key, "bytes": int(size), "files": int(files),
+                     "path": path, "nested": nested})
+    return {"items": rows,
+            "total": sum(item["bytes"] for item in rows if not item["nested"]),
             "var_dir": var_dir()}
 
 
@@ -1077,18 +1121,19 @@ def clear_panel_logs():
 # rollback before anything is uninstalled.
 # --------------------------------------------------------------------------
 UPDATE_DIR = os.path.join(var_dir(), "update")
-UPDATE_STATE = {"phase": "idle", "version": "", "detail": "", "at": 0,
-                "done": 0, "total": 0}
+# phase: idle | checking | downloading | installing | failed
+# code:  a stable identifier the browser translates (empty = use detail as-is)
+UPDATE_STATE = {"phase": "idle", "detail": "", "code": "", "done": 0, "total": 0,
+                "attempt": 0}
 UPDATE_LOCK = threading.Lock()
 
 
-def _set_update(phase, version="", detail="", done=None, total=None):
+def _set_update(phase, detail="", done=None, total=None, code=""):
     with UPDATE_LOCK:
         UPDATE_STATE.update({
             "phase": phase,
-            "version": version,
             "detail": detail,
-            "at": int(time.time()),
+            "code": code,
         })
         # Byte counters drive the progress bar. A new download seeds them to 0/0
         # and the download loop fills them in; later phases (installing, failed)
@@ -1100,9 +1145,21 @@ def _set_update(phase, version="", detail="", done=None, total=None):
             UPDATE_STATE["total"] = int(total)
 
 
+def _fail_update(exc):
+    """Publish a failure both as readable text and as a translatable code."""
+    _set_update("failed", describe_error(exc), code=error_code(exc))
+
+
 def update_status():
+    """Everything the progress card needs, in one poll.
+
+    `attempt` lets the browser tell "the failure I already showed" from "the
+    failure of the run I just started"; `rollback` tells it whether the
+    installer actually has a package to fall back to.
+    """
     st = dict(UPDATE_STATE)
     st["current"] = VERSION
+    st["rollback"] = os.path.isfile(os.path.join(UPDATE_DIR, "rollback.fpk"))
     log_path = os.path.join(UPDATE_DIR, "install.log")
     st["log"] = ""
     if os.path.isfile(log_path):
@@ -1125,10 +1182,18 @@ def pick_fpk_asset(info):
 
 
 def download_file(url, dest, limit=128 * 1024 * 1024, on_progress=None):
+    """Fetch `dest` through `dest.part`, so a broken transfer leaves no fake package.
+
+    Writing straight to the final name made an interrupted download look like a
+    complete one: the cleanup only recognises ".part"/".tmp" as half-downloaded,
+    so the truncated .fpk survived every purge and even took one of the two kept
+    slots. The rename only happens once every byte arrived.
+    """
+    part = dest + ".part"
     req = urllib.request.Request(url, headers={"User-Agent": "qBpanel/" + VERSION})
     ctx = ssl.create_default_context()
     total = 0
-    with urllib.request.urlopen(req, timeout=180, context=ctx) as resp, open(dest, "wb") as f:
+    with urllib.request.urlopen(req, timeout=180, context=ctx) as resp, open(part, "wb") as f:
         # GitHub serves a Content-Length for release assets, so the browser can
         # show a real percentage instead of an endless spinner. It can be absent
         # (chunked replies), in which case total stays 0 and the UI falls back to
@@ -1145,10 +1210,15 @@ def download_file(url, dest, limit=128 * 1024 * 1024, on_progress=None):
                 break
             total += len(chunk)
             if total > limit:
-                raise ValueError("安装包超过 %d MB，已中止" % (limit // 1024 // 1024))
+                raise UpdateError("pkgTooBig", "安装包超过 %d MB，已中止"
+                                  % (limit // 1024 // 1024))
             f.write(chunk)
             if on_progress:
                 on_progress(total, expect)
+    try:
+        os.replace(part, dest)
+    except OSError as exc:
+        raise UpdateError("pkgUnreadable", "无法保存安装包：%s" % exc)
     return total
 
 
@@ -1159,33 +1229,53 @@ def validate_fpk(path):
         with tarfile.open(path, "r:gz") as tf:
             names = tf.getnames()
             if "manifest" not in names or "app.tgz" not in names:
-                raise ValueError("安装包结构不完整")
+                raise UpdateError("pkgStructure",
+                                  "安装包结构不完整（缺少 manifest 或 app.tgz）")
             raw = tf.extractfile("manifest").read().decode("utf-8", "replace")
-    except ValueError:
+    except UpdateError:
         raise
     except Exception as exc:
-        raise ValueError("安装包无法解压：%s" % exc)
+        raise UpdateError("pkgUnreadable", "安装包无法解压：%s" % exc)
     appname = ""
     for line in raw.splitlines():
         if line.strip().startswith("appname"):
             appname = line.split("=", 1)[1].strip()
             break
     if appname != APP_NAME:
-        raise ValueError("安装包应用名不匹配：%s" % (appname or "?"))
+        raise UpdateError("pkgAppName", "安装包应用名不匹配：%s（应为 %s）"
+                          % (appname or "?", APP_NAME), arg=appname or "?")
     if not os.path.isfile("/usr/bin/appcenter-cli") and not shutil.which("appcenter-cli"):
-        raise ValueError("找不到 appcenter-cli，无法自动安装")
+        raise UpdateError("noCli", "找不到 appcenter-cli，无法自动安装")
 
 
 def find_previous_fpk():
-    """The package matching the running version, used as a rollback."""
-    for folder in ("/vol1/1000/development/qbpanel", "/vol1/@appshare/fn-qbpanel"):
+    """The package matching the running version, used as a rollback.
+
+    UPDATE_DIR comes first: the one-click updater downloads every package into
+    it, so after one upgrade the package that is *currently running* is sitting
+    right there. Searching only the shared folders left the rollback empty on
+    any device that had ever upgraded through this panel - the installer's
+    "install the previous version again" branch then never ran at all.
+    """
+    want = "fn-qbpanel-%s" % VERSION
+    folders = [UPDATE_DIR, "/vol1/1000/development/qbpanel", "/vol1/@appshare/fn-qbpanel"]
+    best = ""
+    best_t = -1
+    for folder in folders:
         try:
             for fn in os.listdir(folder):
-                if fn.startswith("fn-qbpanel-%s" % VERSION) and fn.endswith(".fpk"):
-                    return os.path.join(folder, fn)
+                if not (fn.startswith(want) and fn.endswith(".fpk")):
+                    continue
+                path = os.path.join(folder, fn)
+                try:
+                    t = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if t > best_t:
+                    best, best_t = path, t
         except OSError:
             continue
-    return ""
+    return best
 
 
 UPDATE_SCRIPT = """#!/bin/sh
@@ -1250,21 +1340,45 @@ def build_update_script(version, port, pkg, prev, log_path):
     }
 
 
+def _refuse(code, detail, **extra):
+    out = {"ok": False, "code": code, "error": detail}
+    out.update(extra)
+    return out
+
+
 def start_update():
-    if UPDATE_STATE.get("phase") in ("downloading", "installing"):
-        return {"ok": False, "error": "更新已在进行中"}
+    """Download, validate and hand off to the detached installer.
+
+    Every attempt starts by publishing "checking". UPDATE_STATE never returns to
+    "idle" on its own, so without this reset a retry after a failure would be
+    read as the *previous* failure on the very first poll - the modal closed
+    instantly, quoting last time's reason, while the new download kept running
+    in the background.
+    """
+    if UPDATE_STATE.get("phase") in ("checking", "downloading", "installing"):
+        return _refuse("busy", "更新已在进行中")
+    _set_update("checking", "", done=0, total=0)
+    attempt = UPDATE_STATE.get("attempt", 0) + 1
+    with UPDATE_LOCK:
+        UPDATE_STATE["attempt"] = attempt
+
     info = check_update(force=True)
     if not info.get("ok"):
-        return {"ok": False, "error": info.get("error") or "无法获取版本信息"}
+        _set_update("failed", info.get("error") or "无法获取版本信息", code="checkFailed")
+        return _refuse("checkFailed", info.get("error") or "无法获取版本信息")
     if not info.get("has_update"):
-        return {"ok": False, "error": "当前已是最新版本", "latest": info.get("latest")}
+        _set_update("failed", "当前已是最新版本", code="upToDate")
+        return _refuse("upToDate", "当前已是最新版本", latest=info.get("latest"))
     asset = pick_fpk_asset(info)
     if not asset:
-        return {"ok": False, "error": "该版本没有附带 .fpk 安装包"}
+        _set_update("failed", "该版本没有附带 .fpk 安装包", code="noAsset")
+        return _refuse("noAsset", "该版本没有附带 .fpk 安装包")
     try:
         os.makedirs(UPDATE_DIR, exist_ok=True)
     except OSError as exc:
-        return {"ok": False, "error": "无法创建下载目录：%s" % exc}
+        err = UpdateError("noDir", "无法创建下载目录：%s" % exc)
+        _fail_update(err)
+        return _refuse("noDir", describe_error(err))
     name = os.path.basename(asset["name"]) or "qBpanel-update.fpk"
     dest = os.path.join(UPDATE_DIR, name)
     # Start every attempt with an empty install.log: the file is appended to by
@@ -1275,19 +1389,18 @@ def start_update():
             pass
     except OSError:
         pass
-    _set_update("downloading", info["latest"], "", done=0, total=0)
+    _set_update("downloading", "", done=0, total=0)
 
     def _on_dl(done, total):
-        _set_update("downloading", info["latest"], "", done=done, total=total)
+        _set_update("downloading", "", done=done, total=total)
 
     try:
         download_file(asset["url"], dest, on_progress=_on_dl)
         validate_fpk(dest)
     except Exception as exc:
-        reason = describe_error(exc)
-        _set_update("failed", info["latest"], reason)
+        _fail_update(exc)
         log("update download failed: %r" % (exc,))
-        return {"ok": False, "error": reason}
+        return _refuse(error_code(exc), describe_error(exc))
 
     prev = ""
     try:
@@ -1298,6 +1411,10 @@ def start_update():
     except Exception as exc:
         log("rollback copy skipped: %r" % (exc,))
         prev = ""
+    if not prev:
+        # No usable package to fall back to. Say so instead of promising a
+        # rollback the installer will silently skip.
+        log("rollback package not found for %s" % VERSION)
 
     script = os.path.join(UPDATE_DIR, "install.sh")
     try:
@@ -1318,12 +1435,13 @@ def start_update():
             start_new_session=True,
         )
     except Exception as exc:
-        reason = "无法启动安装脚本：%s" % describe_error(exc)
-        _set_update("failed", info["latest"], reason)
-        return {"ok": False, "error": reason}
-    _set_update("installing", info["latest"], "")
+        err = UpdateError("noScript", "无法启动安装脚本：%s" % describe_error(exc))
+        _fail_update(err)
+        return _refuse("noScript", describe_error(err))
+    _set_update("installing", "")
     log("one-click update started -> %s" % info["latest"])
-    return {"ok": True, "version": info["latest"]}
+    return {"ok": True, "version": info["latest"], "attempt": attempt,
+            "rollback": bool(prev)}
 
 
 

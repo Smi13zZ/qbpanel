@@ -23,7 +23,7 @@ APP_NAME = "fn-qbpanel"
 LEGACY_APP_NAMES = ("qbpanel",)
 # cmd/main exports the version read from the fpk manifest, so the panel always
 # reports the packaged version instead of a hand-maintained constant.
-VERSION = os.environ.get("QBPANEL_VERSION") or "26.11.16"
+VERSION = os.environ.get("QBPANEL_VERSION") or "26.11.17"
 
 
 # --------------------------------------------------------------------------
@@ -267,18 +267,6 @@ def parse_sid_cookie(set_cookie):
         if name == "SID" or name.startswith("QBT_SID"):
             return name, value
     return None, None
-
-
-def cookie_value(set_cookie, name):
-    """Kept for backwards compatibility - returns value of a named cookie."""
-    if not set_cookie:
-        return None
-    for part in str(set_cookie).split(","):
-        for chunk in part.split(";"):
-            chunk = chunk.strip()
-            if chunk.lower().startswith(name.lower() + "="):
-                return chunk.split("=", 1)[1]
-    return None
 
 
 # --------------------------------------------------------------------------
