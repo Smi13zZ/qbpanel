@@ -934,6 +934,8 @@ def update_poll_thread():
 UPDATE_KEEP = 2
 PANEL_LOG = os.path.join(var_dir(), "qbpanel.log")
 INSTALL_LOG = os.path.join(var_dir(), "update", "install.log")
+# 回滚包：升级脚本装不上新版本时用来装回旧版本，永远不参与「保留 N 个」的计数。
+ROLLBACK_FPK = "rollback.fpk"
 
 
 def update_download_running():
@@ -942,7 +944,12 @@ def update_download_running():
 
 
 def _update_cache_items():
-    """Everything in UPDATE_DIR that a cleanup decision cares about."""
+    """Everything in UPDATE_DIR that a cleanup decision cares about.
+
+    The rollback copy is included (the storage page lists it like any other
+    package), but it carries ``rollback: True`` so the cleanup below never
+    counts it against the "keep N" quota and never deletes it.
+    """
     out = []
     try:
         names = os.listdir(UPDATE_DIR)
@@ -951,8 +958,6 @@ def _update_cache_items():
     for name in names:
         low = name.lower()
         if not (low.endswith(".fpk") or low.endswith(".part") or low.endswith(".tmp")):
-            continue
-        if name == "rollback.fpk":
             continue
         path = os.path.join(UPDATE_DIR, name)
         try:
@@ -964,6 +969,7 @@ def _update_cache_items():
             "bytes": int(stat.st_size),
             "t": int(stat.st_mtime),
             "partial": low.endswith(".part") or low.endswith(".tmp"),
+            "rollback": name == ROLLBACK_FPK,
             "path": path,
         })
     out.sort(key=lambda item: item["t"], reverse=True)
@@ -971,7 +977,7 @@ def _update_cache_items():
 
 
 def updates_list():
-    """Cached update packages, newest first. The rollback copy is left alone."""
+    """Cached update packages, newest first, including the rollback copy."""
     return [{k: v for k, v in item.items() if k != "path"}
             for item in _update_cache_items()]
 
@@ -991,7 +997,8 @@ def purge_update_cache(keep=UPDATE_KEEP, protect_version=VERSION):
     protect = str(protect_version or "").strip().lstrip("vV")
     root = os.path.realpath(UPDATE_DIR)
     items = _update_cache_items()
-    full = [item for item in items if not item["partial"]]
+    full = [item for item in items
+            if not item["partial"] and not item.get("rollback")]
     keep_names = set(item["name"] for item in full[:keep])
     removed = []
     kept = []
@@ -999,6 +1006,10 @@ def purge_update_cache(keep=UPDATE_KEEP, protect_version=VERSION):
     refused = False
     for item in items:
         name = item["name"]
+        if item.get("rollback"):
+            # 回滚包是升级失败时的底牌，既不占保留名额也永不删除。
+            kept.append(name)
+            continue
         if protect and protect in name:
             kept.append(name)
             continue
@@ -1159,7 +1170,7 @@ def update_status():
     """
     st = dict(UPDATE_STATE)
     st["current"] = VERSION
-    st["rollback"] = os.path.isfile(os.path.join(UPDATE_DIR, "rollback.fpk"))
+    st["rollback"] = os.path.isfile(os.path.join(UPDATE_DIR, ROLLBACK_FPK))
     log_path = os.path.join(UPDATE_DIR, "install.log")
     st["log"] = ""
     if os.path.isfile(log_path):
@@ -1406,7 +1417,7 @@ def start_update():
     try:
         src = find_previous_fpk()
         if src:
-            prev = os.path.join(UPDATE_DIR, "rollback.fpk")
+            prev = os.path.join(UPDATE_DIR, ROLLBACK_FPK)
             shutil.copyfile(src, prev)
     except Exception as exc:
         log("rollback copy skipped: %r" % (exc,))
