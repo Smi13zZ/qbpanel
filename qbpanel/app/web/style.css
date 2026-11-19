@@ -477,6 +477,20 @@ input[type="number"] { -moz-appearance: textfield; }
 .ttable.tstorage tbody td { height: 46px; padding-top: 0; padding-bottom: 0; }
 .ttable.tstorage .bcname { min-width: 0; }
 .ttable.tstorage .bcname .sub { font-size: 11px; margin-top: 2px; color: var(--faint); }
+/* 安装包缓存的行：文件名与「当前版本 / 半截」标记同一行，时间单独占第二行。
+   名称按内容宽度收缩（长名字省略号），标记始终留在第一行右侧；
+   手机上换成「名称独占一行、时间 + 标记占第二行」，见 640px 断点。 */
+.ttable.tstorage .pkgrow { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; }
+.ttable.tstorage .pkgname {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ttable.tstorage .pkgflag { flex: 0 0 auto; display: inline-flex; align-items: center; }
+.ttable.tstorage .pkgtime {
+  flex: 0 0 100%; margin-top: 2px;
+  font-size: 11px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .storage-total {
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
   margin: 14px 0 12px; padding: 12px 14px;
@@ -1011,6 +1025,15 @@ canvas { display: block; width: 100%; height: 100%; }
   .ttable.tstorage th, .ttable.tstorage td { padding-left: 8px; padding-right: 8px; }
   .ttable.tstorage tbody td { height: 40px; }
   .ttable.tstorage .bcname .sub { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+  /* 安装包缓存：名称独占首行，第二行是「时间 + 当前版本/半截」。
+     时间要按正常顺序左对齐，不能吃上面那条 direction:rtl（那会把
+     「2026-11-19 15:54:03」排成「15:54:03 2026-11-19」）。 */
+  .ttable.tstorage .pkgname { flex: 0 0 100%; }
+  .ttable.tstorage .pkgtime {
+    order: 2; flex: 0 1 auto; font-size: 10px;
+    direction: ltr; text-align: left;
+  }
+  .ttable.tstorage .pkgflag { order: 3; }
   .ttable.tstorage thead th { font-size: 11.5px; padding-top: 6px; padding-bottom: 6px; }
   .storage-scroll .btn.sm { padding: 0 8px; font-size: 12px; }
 

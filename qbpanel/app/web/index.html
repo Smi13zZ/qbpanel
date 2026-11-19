@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.17">
+<link rel="stylesheet" href="./style.css?v=26.11.18">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -816,12 +816,16 @@
               <tbody>
                 <tr v-for="u in storageData.updates" :key="u.name">
                   <td class="bcname">
-                    <div class="mono ellipsis" :title="u.name">
-                      {{ u.name }}
-                      <span class="chip" v-if="u.partial" style="margin-left:6px">{{ t('settings.storage.partial') }}</span>
-                      <span class="tagcur" v-else-if="storageData.current_version && u.name.indexOf(storageData.current_version) >= 0" style="margin-left:6px">{{ t('settings.storage.inUse') }}</span>
+                    <div class="pkgrow">
+                      <span class="pkgname mono" :title="u.name">{{ u.name }}</span>
+                      <span class="pkgflag" v-if="u.partial">
+                        <span class="chip">{{ t('settings.storage.partial') }}</span>
+                      </span>
+                      <span class="pkgflag" v-else-if="storageData.current_version && u.name.indexOf(storageData.current_version) >= 0">
+                        <span class="tagcur">{{ t('settings.storage.inUse') }}</span>
+                      </span>
+                      <span class="pkgtime" :title="u.t ? fmt.fmtDate(u.t) : ''">{{ u.t ? fmt.fmtDate(u.t) : '—' }}</span>
                     </div>
-                    <div class="sub">{{ u.t ? fmt.fmtDate(u.t) : '—' }}</div>
                   </td>
                   <td class="num mono">{{ fmt.fmtBytes(u.bytes) }}</td>
                 </tr>
@@ -1494,10 +1498,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.11.17"></script>
-<script src="./js/util.js?v=26.11.17"></script>
-<script src="./js/api.js?v=26.11.17"></script>
-<script src="./js/charts.js?v=26.11.17"></script>
-<script src="./js/app.js?v=26.11.17"></script>
+<script src="./js/i18n.js?v=26.11.18"></script>
+<script src="./js/util.js?v=26.11.18"></script>
+<script src="./js/api.js?v=26.11.18"></script>
+<script src="./js/charts.js?v=26.11.18"></script>
+<script src="./js/app.js?v=26.11.18"></script>
 </body>
 </html>
