@@ -251,6 +251,11 @@
         /* 本次尝试的编号（服务端下发）与「安装脚本手上有没有回滚包」。前者让
            重试时能忽略上一次留下的失败状态，后者决定失败提示要不要说「已回滚」。 */
         updateAttempt: 0,
+        /* 阶段单调性只在同一轮尝试内成立：attempt 变了就整体重置，
+           否则上一轮停在 installing、这一轮从 checking 开始会被判成后退。 */
+        updateMonoAttempt: -1,
+        /* 自动重试刷新超过 10 次后放出的自救按钮 */
+        updateReloadReady: false,
         updateRollbackReady: false,
         /* 失败提示要同时出现在设置页和全局横幅：从概览页点的「一键更新」失败后，
            用户当时不在设置页，原先一个字都看不到。 */
@@ -1712,20 +1717,51 @@ serverName: function () {
          清零让进度区切成「准备中」，不假装还有百分比。 */
       applyUpdateState: function (st) {
         if (!st) return;
+        /* 三条收敛规则，缺一条界面就会被旧快照打回去（26.11.19 及以前的
+           故障形态）：
+
+           1. 阶段只允许前进。checking < downloading < verifying < installing，
+              后退的快照整帧丢弃 —— 它描述的是更早时刻的进度。
+           2. total 只增不减，但只在 downloading 分支内。校验/安装阶段没有
+              可测总量，那里清零是**有意**的，不能算「减少」。
+           3. 单调性只在同一 attempt 内成立。attempt 变了说明是新一轮，必须
+              整体重置：上一轮停在 installing、total 是 10 MB，而这一轮从
+              checking、3 MB 的包开始，不重置就永远动不了。 */
+        const ORDER = { checking: 0, downloading: 1, verifying: 2, installing: 3 };
+        const rawPhase = String(st.phase || "");
+        const attempt = typeof st.attempt === "number" ? st.attempt : 0;
+        if (attempt !== this.updateMonoAttempt) {
+          this.updateMonoAttempt = attempt;
+          this.updateProgressDone = 0;
+          this.updateProgressTotal = 0;
+          this._updateMonoPhase = "";
+        }
+        const prevRank = ORDER[this._updateMonoPhase];
+        const nextRank = ORDER[rawPhase];
+        if (prevRank !== undefined && nextRank !== undefined && nextRank < prevRank) {
+          return;
+        }
+        if (nextRank !== undefined) this._updateMonoPhase = rawPhase;
+
         const prevPct = this.updateProgressPct;
-        if (typeof st.done === "number") this.updateProgressDone = Math.max(this.updateProgressDone || 0, st.done);
-        if (typeof st.total === "number") this.updateProgressTotal = st.total;
+        if (typeof st.done === "number") {
+          this.updateProgressDone = Math.max(this.updateProgressDone || 0, st.done);
+        }
+        if (typeof st.total === "number") {
+          this.updateProgressTotal = rawPhase === "downloading"
+            ? Math.max(this.updateProgressTotal || 0, st.total)
+            : 0;
+        }
         /* 阶段文案一律由前端按当前语言拼：服务端 detail 只在失败时才有意义
            （翻译好的原因），成功路径上是空串，直接回显会让英文界面冒出中文。 */
-        if (st.phase === "checking") {
+        if (rawPhase === "checking") {
           this.updateInstallDetail = this.t("update.checking");
-        } else if (st.phase === "downloading") {
+        } else if (rawPhase === "downloading") {
           this.updateInstallDetail = this.t("update.downloading");
-        } else if (st.phase === "installing") {
+        } else if (rawPhase === "verifying") {
+          this.updateInstallDetail = this.t("update.verifying");
+        } else if (rawPhase === "installing") {
           this.updateInstallDetail = this.t("update.restarting");
-          /* 安装重启阶段没有可测总量，把 total 清零让进度区切成「准备中」，
-             不假装还有百分比；进度条留在下载结束的 100% 也不再回退。 */
-          this.updateProgressTotal = 0;
         } else if (st.detail) {
           this.updateInstallDetail = st.detail;
         }
@@ -1821,8 +1857,29 @@ serverName: function () {
         this.updateInstallDetail = this.t("update.done", { v: version || "" });
         setTimeout(function () {
           self.updateInstalling = false;
-          location.reload();
+          self.reloadWhenBack(0);
         }, 1500);
+      },
+      /* 装完后的自动刷新要等面板真的回来再刷。
+         升级脚本是「停服务 → 卸载 → 安装 → 启动」，成功结论出现的那一刻服务
+         往往正要停：这时立刻 location.reload() 等于主动撞进离线空窗，
+         浏览器停在错误页上再也回不来。
+         改成先探一次接口（能答上来说明新进程已经在服务），拿不到就退避重试。 */
+      reloadWhenBack: function (attempt) {
+        const self = this;
+        const n = Number(attempt) || 0;
+        API.updateStatus().then(function () {
+          try { location.reload(); } catch (e) { /* ignore */ }
+        }).catch(function () {
+          // 等太久就把「立即重新加载」放出来：浏览器若已停在断网错误页上，
+          // 自动重试是回不来的，用户至少有一个按钮能自己再试一次。
+          if (n >= 10) self.updateReloadReady = true;
+          if (n >= 100) { try { location.reload(); } catch (e) { /* ignore */ } return; }
+          setTimeout(function () { self.reloadWhenBack(n + 1); }, 800);
+        });
+      },
+      reloadNow: function () {
+        try { location.reload(); } catch (e) { /* ignore */ }
       },
       /* ---------------- notifications ---------------- */
       loadNotify: async function () {

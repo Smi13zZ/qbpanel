@@ -940,7 +940,7 @@ ROLLBACK_FPK = "rollback.fpk"
 
 def update_download_running():
     with UPDATE_LOCK:
-        return UPDATE_STATE.get("phase") in ("downloading", "installing")
+        return UPDATE_STATE.get("phase") in ("downloading", "verifying", "installing")
 
 
 def _update_cache_items():
@@ -1366,7 +1366,8 @@ def start_update():
     instantly, quoting last time's reason, while the new download kept running
     in the background.
     """
-    if UPDATE_STATE.get("phase") in ("checking", "downloading", "installing"):
+    if UPDATE_STATE.get("phase") in ("checking", "downloading", "verifying",
+                                    "installing"):
         return _refuse("busy", "更新已在进行中")
     _set_update("checking", "", done=0, total=0)
     attempt = UPDATE_STATE.get("attempt", 0) + 1
@@ -1407,6 +1408,9 @@ def start_update():
 
     try:
         download_file(asset["url"], dest, on_progress=_on_dl)
+        # 校验单独一阶段：解包读 manifest 需要时间，界面在这段时间没有
+        # 总量可测。不置这个阶段，下载 100% 之后会静止几秒看起来像卡住。
+        _set_update("verifying", "")
         validate_fpk(dest)
     except Exception as exc:
         _fail_update(exc)

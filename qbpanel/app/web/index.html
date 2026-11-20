@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.19">
+<link rel="stylesheet" href="./style.css?v=26.11.20">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -1473,6 +1473,11 @@
     </div>
 
     <div class="upkeep">{{ t('update.keepOpen') }}</div>
+    <!-- 自动重试太久才出现：浏览器若已停在断网错误页上，自动重试回不来，
+         至少留一个用户能自己点的入口。 -->
+    <button type="button" class="btn sm" v-if="updateReloadReady" @click="reloadNow()">
+      {{ t('update.reload') }}
+    </button>
   </div>
 </div>
 
@@ -1498,10 +1503,10 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.11.19"></script>
-<script src="./js/util.js?v=26.11.19"></script>
-<script src="./js/api.js?v=26.11.19"></script>
-<script src="./js/charts.js?v=26.11.19"></script>
-<script src="./js/app.js?v=26.11.19"></script>
+<script src="./js/i18n.js?v=26.11.20"></script>
+<script src="./js/util.js?v=26.11.20"></script>
+<script src="./js/api.js?v=26.11.20"></script>
+<script src="./js/charts.js?v=26.11.20"></script>
+<script src="./js/app.js?v=26.11.20"></script>
 </body>
 </html>
