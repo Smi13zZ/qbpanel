@@ -63,6 +63,16 @@ jobs:
       - name: 检查图标大小写与尺寸完整性
         run: python3 tools/check_icon_case.py
 
+      # 升级遮罩的阶段收敛 + Release 正文的 Markdown 渲染器。
+      # 前者是「点一键更新后卡在遮罩里」的直接成因；后者既管排版也管注入防护
+      # （正文是外网拉回来的，先渲染再清理会在 onerror= / javascript: 上漏）。
+      # 两条都是纯静态 / 纯函数，失败就不该出包。
+      - name: 更新链路闸门
+        run: |
+          set -euo pipefail
+          python3 tools/check_update_mono.py
+          node tools/test_md.js
+
       - name: 准备打包目录
         run: |
           set -euo pipefail

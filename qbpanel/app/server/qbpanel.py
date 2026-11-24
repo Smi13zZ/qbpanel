@@ -1161,6 +1161,32 @@ def _fail_update(exc):
     _set_update("failed", describe_error(exc), code=error_code(exc))
 
 
+#: appcenter-cli 把终端转圈动画直接写进重定向的日志：`\r\ stopping.\r| stopping.`
+#: 这类片段。按行切分后一条动画会变成几十行阶梯状的「stopping...」，把真正有用
+#: 的 `[Info]` 行挤出窗口，卡片上只剩噪音。这里只保留能读的行。
+_SPINNER_WORDS = frozenset((
+    "stopping", "installing", "starting", "uninstalling", "verifying files",
+    "verifying", "downloading", "extracting", "compressing", "removing",
+    "cleaning", "unpacking", "upgrading",
+))
+
+
+def clean_install_log(text):
+    """滤掉 appcenter-cli 的转圈帧，只留真正能读的日志行。"""
+    out = []
+    for row in (text or "").splitlines():
+        s = row.strip()
+        if not s:
+            continue
+        if set(s) <= set("-\\|/. \t"):          # 纯符号帧（`.` / `..` / `\ ...`）
+            continue
+        word = s.lstrip("-\\|/").strip().rstrip(".").strip().lower()
+        if word in _SPINNER_WORDS:
+            continue
+        out.append(s)
+    return out
+
+
 def update_status():
     """Everything the progress card needs, in one poll.
 
@@ -1176,7 +1202,7 @@ def update_status():
     if os.path.isfile(log_path):
         try:
             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.read().strip().splitlines()
+                lines = clean_install_log(f.read())
             st["log"] = "\n".join(lines[-12:])
         except Exception:
             pass

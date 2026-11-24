@@ -347,20 +347,17 @@
       updateNew: function () {
         return !!(this.updateInfo && this.updateInfo.has_update);
       },
-      /* Release notes arrive as Markdown. The card shows plain text, so strip
-         the syntax that would otherwise read as noise (##, **, backticks). */
+      /* Release notes arrive as Markdown. Previously this stripped the syntax
+         and showed plain text, which threw away the structure that makes a
+         changelog readable. md.js renders it, escaping the whole body first so
+         a hostile release body cannot inject anything. */
       updateNotes: function () {
         const raw = (this.updateInfo && this.updateInfo.notes) || "";
-        return raw
-          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
-          .replace(/^\s{0,3}#{1,6}\s*/gm, "")
-          .replace(/\*\*([^*]+)\*\*/g, "$1")
-          .replace(/__([^_]+)__/g, "$1")
-          .replace(/`([^`]+)`/g, "$1")
-          .replace(/^\s*[-*]\s+/gm, "· ")
-          .replace(/\n{3,}/g, "\n\n")
-          .trim();
+        if (!raw) return "";
+        if (window.MD) return window.MD.render(raw);
+        return String(raw)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/\r?\n/g, "<br>");
       },
       themeMode: function () {
         return this.themeOverride || this.settings.theme_mode || "dark";
