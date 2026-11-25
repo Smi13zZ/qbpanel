@@ -230,6 +230,48 @@ def check_indeterminate_and_verline():
 
     fails.extend(check_app_shell(css))
 
+    fails.extend(check_icon_settings_gear())
+
+    return fails
+
+
+#: 齿轮左上角那段弧的起点，是这套图标里唯一能把它和太阳区分开的特征。
+GEAR_MARK = "M19.4 15a1.65"
+#: 太阳版「设置」的特征：圆 + 8 条从中心发散的短线，从 M12 2v3 起笔。
+SUN_MARK = "M12 2v3"
+
+
+def check_icon_settings_gear():
+    """侧栏「设置」的图标必须是齿轮。
+
+    太阳那套（圆 + 8 条短线）读起来是「亮度/主题」，不是「设置」；
+    主题按钮自己走 sun / moon / monitor 三个独立键，不受影响。
+
+    判据：
+      1. app.js 里 settings 键存在
+      2. settings 的图形命中齿轮特征
+      3. settings 的图形不得命中太阳特征
+      4. 主题用的 sun 键必须还在（防止顺手把主题图标一起删了）
+    """
+    fails = []
+    try:
+        src = io.open(APP_JS, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return ["读不到 app.js，无法核对设置图标"]
+
+    m = re.search(r"settings\s*:\s*svg\(\s*'([^']*)'", src)
+    if not m:
+        fails.append("app.js 里找不到 settings 图标定义")
+    else:
+        icon = m.group(1)
+        if GEAR_MARK not in icon:
+            fails.append("侧栏「设置」的图标不是齿轮（太阳那套读起来像亮度）")
+        if SUN_MARK in icon:
+            fails.append("侧栏「设置」的图标退回成太阳了")
+
+    if "sun: svg(" not in src:
+        fails.append("主题的 sun 图标不见了（换设置图标时误删）")
+
     return fails
 
 
