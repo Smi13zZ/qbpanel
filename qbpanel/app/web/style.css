@@ -141,7 +141,8 @@ svg { display: block; }
 .nav-item:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
 .nav-item.on { background: var(--nav-active); color: var(--nav-active-fg); }
 /* sidebar glyphs are drawn a touch heavier than the default 1.8 */
-.side .nav-item svg, .side .ver-line svg { stroke-width: 2.1; }
+.side .nav-item svg { stroke-width: 2.1; }
+.side .ver-line svg { stroke-width: 1.9; }
 .nav-item .badge {
   font-size: 11px; font-weight: 600; line-height: 1;
   min-width: 18px; height: 18px; padding: 0 5px;
@@ -1175,4 +1176,29 @@ canvas { display: block; width: 100%; height: 100%; }
    比字低 2px 左右（实测 eMule 2.3px、PVEpanel 2.0px）。
    收窄行高去掉半行距，再把图标上移 1px 补字形差异，实测降到 0.3 / 0.0 / -0.5px。 */
 .ver-line { line-height: 16px; }
-.ver-line svg { transform: translateY(-1px); }
+/* 版本行：地球图标与版本文字的对齐。
+   实测（10 倍放大、逐列找墨迹）：14px 图标时地球墨迹高 11.8px、文字 8.2px，
+   中线虽然重合，但地球上下各超出 1.75px，看起来像「地球沉下去」。
+   缩到 11px 后地球 9.2px 与文字基本同高，中线差在三款为 0.00、另一款 0.35，
+   上下超出对称在 0.5px 内，是这几轮实测里最平衡的一档。 */
+.ver-line svg { width: 11px; height: 11px; flex: 0 0 11px;
+                transform: translateY(-1.5px); }
+
+
+/* 按钮里的图标容器：宽高交给 CSS，不依赖 svg 标签上的 width/height 属性。
+   某些产品的图标是 `<svg viewBox="0 0 24 24">` 不带尺寸的，没有这条规则
+   宽度会塌成 0（按钮上只剩文字，看起来像「图标没生效」）。 */
+.btn .ic {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; flex: 0 0 16px;
+}
+.btn .ic svg { width: 16px; height: 16px; display: block; }
+
+/* 「检查更新」按钮：点击后图标 360° 不停旋转，表示正在检查。
+   用 animation 而不是 transition —— 检查是一段持续状态，不是一次性动作。
+   关掉动效时退回静止（图标仍在，只是不转）。 */
+.btn .ic.spinning svg { animation: checkSpin .9s linear infinite; }
+@keyframes checkSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn .ic.spinning svg { animation: none; }
+}

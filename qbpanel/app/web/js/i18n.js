@@ -304,7 +304,7 @@
       "update.publishedAt": "发布时间",
       "update.neverChecked": "尚未检查",
       "update.check": "检查更新",
-      "update.checking": "检查中…",
+      "update.checking": "正在检查…",
       "update.available": "发现新版本 {v}",
       "update.failed": "检查失败：{v}",
       "update.notes": "版本更新说明",

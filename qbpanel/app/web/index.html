@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>qBpanel</title>
 <link rel="icon" href="./images/icon.svg">
-<link rel="stylesheet" href="./style.css?v=26.11.21">
+<link rel="stylesheet" href="./style.css?v=26.11.22">
 </head>
 <body>
 <div id="app" v-cloak>
@@ -991,7 +991,7 @@
                  桌面上 display: contents 让按钮回到与文字同一行。 -->
             <div class="vactions">
               <button class="btn sm" type="button" :disabled="updateChecking || updateInstalling" @click="checkUpdate(true)">
-                <span class="ic" v-html="ic('refresh')"></span>{{ updateChecking ? t('update.checking') : t('update.check') }}
+                <span class="ic" :class="{ spinning: updateChecking }" v-html="ic('refresh')"></span>{{ updateChecking ? t('update.checking') : t('update.check') }}
               </button>
               <button class="btn sm primary" type="button" v-if="updateNew"
                       :disabled="updateInstalling" @click="installUpdate">
@@ -1510,11 +1510,11 @@
 </div>
 
 <script src="./lib/vue.global.prod.js"></script>
-<script src="./js/i18n.js?v=26.11.21"></script>
-<script src="./js/util.js?v=26.11.21"></script>
-<script src="./js/api.js?v=26.11.21"></script>
-<script src="./js/md.js?v=26.11.21"></script>
-<script src="./js/charts.js?v=26.11.21"></script>
-<script src="./js/app.js?v=26.11.21"></script>
+<script src="./js/i18n.js?v=26.11.22"></script>
+<script src="./js/util.js?v=26.11.22"></script>
+<script src="./js/api.js?v=26.11.22"></script>
+<script src="./js/md.js?v=26.11.22"></script>
+<script src="./js/charts.js?v=26.11.22"></script>
+<script src="./js/app.js?v=26.11.22"></script>
 </body>
 </html>

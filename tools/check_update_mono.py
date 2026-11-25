@@ -142,7 +142,7 @@ def check_indeterminate_and_verline():
     css = io.open(css_path, encoding="utf-8").read() if os.path.isfile(css_path) else ""
     if not css:
         fails.append("找不到 style.css，无法核对遮罩样式")
-        return fails
+    
 
     # 1) 不确定态：必须有 .upprog.indeterminate 与流动动画
     #    这里一律用「选择器 + 大括号 + 关键声明」精确匹配。
@@ -176,10 +176,43 @@ def check_indeterminate_and_verline():
         fails.append("reduced-motion 兜底里没有关掉动画")
 
     # 2) 版本行对齐
+    #    只对齐中线不够：14px 的地球墨迹有 11.8px 高、文字只有 8.2px，
+    #    上下各超出 1.75px，看起来像图标沉下去了。11px 时两者同高
+    #    （9.2 vs 8.2），中线差 0.0~0.35，上下超出对称在 0.5px 内。
     if not re.search(r"\.ver-line\s*\{[^}]*line-height:\s*16px", css):
         fails.append("版本行没有 line-height: 16px（图标会比文字低 2px）")
-    if not re.search(r"\.ver-line\s+svg\s*\{[^}]*translateY\(-1px\)", css):
-        fails.append("版本行图标没有 translateY(-1px) 补偿")
+    # 注意：样式表里还有一条 `.side .ver-line svg { stroke-width }` 排在前面，
+    # 用单次 re.search 会先命中它（它不含 width），于是永远判失败。
+    # 这里取全部同名规则，只要有一条同时带 width 与 translateY 就通过。
+    rules = re.findall(r"\.ver-line\s+svg\s*\{([^}]*)\}", css)
+    if not rules:
+        fails.append("找不到 .ver-line svg 规则")
+    elif not any("width: 11px" in b and "translateY(-1.5px)" in b for b in rules):
+        joined = " | ".join(b.strip()[:70] for b in rules)
+        fails.append("版本行图标不是 11px / translateY(-1.5px)（实际：%s）" % joined)
+
+    # 3) 「检查更新」按钮的旋转图标
+    #    检查是一段持续状态，图标要一直转；用 animation 而不是 transition。
+    # 注意两个坑（都是变异测试抓出来的）：
+    #   a) reduced-motion 里也有一条同选择器的 `{ animation: none; }`，
+    #      用单次 search 会先命中它，主规则删掉也能过 —— 必须要求动画名是 checkSpin。
+    #   b) 关键帧用 `in` 做子串判断，改名成 checkSpinXX 仍是前缀，必须正则 + 边界。
+    spin_rules = re.findall(r"\.btn\s+\.ic\.spinning\s+svg\s*\{([^}]*)\}", css)
+    if not any("checkSpin" in b and "animation" in b for b in spin_rules):
+        fails.append("检查按钮缺少 .btn .ic.spinning 的 checkSpin 旋转动画")
+    if not re.search(r"@keyframes\s+checkSpin\s*\{", css):
+        fails.append("缺少 checkSpin 关键帧（图标不会转）")
+    # 关掉动效时要退回静止，不能一直转
+    if not re.search(r"prefers-reduced-motion[\s\S]{0,400}?spinning[\s\S]{0,200}?animation:\s*none",
+                     css):
+        fails.append("缺少 spinning 的 reduced-motion 兜底")
+
+
+    # 4) 按钮图标容器必须有显式尺寸
+    #    有的产品的图标是 <svg viewBox="0 0 24 24"> 不带 width/height 属性，
+    #    尺寸全靠 CSS；没有这条规则会塌成 0，按钮上只剩文字。
+    if not re.search(r"\.btn\s+\.ic\s*\{[^}]*width:\s*16px", css):
+        fails.append("缺少 .btn .ic 的显式尺寸（图标宽度会塌成 0）")
 
     return fails
 
