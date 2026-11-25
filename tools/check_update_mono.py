@@ -176,20 +176,33 @@ def check_indeterminate_and_verline():
         fails.append("reduced-motion 兜底里没有关掉动画")
 
     # 2) 版本行对齐
-    #    只对齐中线不够：14px 的地球墨迹有 11.8px 高、文字只有 8.2px，
-    #    上下各超出 1.75px，看起来像图标沉下去了。11px 时两者同高
-    #    （9.2 vs 8.2），中线差 0.0~0.35，上下超出对称在 0.5px 内。
+    #    这一条踩过两次，两次都是「看着齐了、换个字就不齐」：
+    #    a) 只对齐墨迹中线：中线确实重合，但 14px 的地球墨迹比文字高 3.6px，
+    #       上下各超出近 2px，看着像图标沉下去；
+    #    b) 换成固定补偿 translateY(-1.5px)：那个像素值是照一种等宽字标定的，
+    #       换一种等宽字，数字墨迹从 8.17px 变 8.71px，偏移立刻失准（实测偏 1.12px）。
+    #    现在要求：对齐基线，尺寸与偏移一律用 em，并且禁止固定像素尺寸。
     if not re.search(r"\.ver-line\s*\{[^}]*line-height:\s*16px", css):
-        fails.append("版本行没有 line-height: 16px（图标会比文字低 2px）")
-    # 注意：样式表里还有一条 `.side .ver-line svg { stroke-width }` 排在前面，
-    # 用单次 re.search 会先命中它（它不含 width），于是永远判失败。
-    # 这里取全部同名规则，只要有一条同时带 width 与 translateY 就通过。
+        fails.append("版本行没有 line-height: 16px（行盒比字形高小半行，图标会偏）")
+    if not re.search(r"\.ver-line\s*\{[^}]*align-items:\s*baseline", css):
+        fails.append("版本行没有 align-items: baseline（固定像素补偿会随字体失准）")
     rules = re.findall(r"\.ver-line\s+svg\s*\{([^}]*)\}", css)
     if not rules:
         fails.append("找不到 .ver-line svg 规则")
-    elif not any("width: 11px" in b and "translateY(-1.5px)" in b for b in rules):
-        joined = " | ".join(b.strip()[:70] for b in rules)
-        fails.append("版本行图标不是 11px / translateY(-1.5px)（实际：%s）" % joined)
+    else:
+        if not any("em" in b and "translateY(" in b for b in rules):
+            joined = " | ".join(b.strip()[:70] for b in rules)
+            fails.append("版本行图标尺寸/偏移没用 em（换一种字就会偏：%s）" % joined)
+        # 固定像素是那两次出错的共同形态，抓死它
+        fixed = [b for b in rules
+                 if re.search(r"(?:^|[;{\s])(?:width|height|flex)\s*:\s*[\d.]+px", b)]
+        if fixed:
+            fails.append("版本行图标写回了固定像素尺寸（%s）" % fixed[0].strip()[:70])
+    # 图标盒子的尺寸也必须用 em：只改 svg、不改盒子，盒子仍按固定 px 占位，
+    # 图标会被挤在中间，居中对齐时又回到「看着偏」的老问题。
+    ic_rules = re.findall(r"\.ver-line\s+\.ic\b[^{]*\{([^}]*)\}", css)
+    if not any("em" in b for b in ic_rules):
+        fails.append("版本行图标盒子的尺寸没用 em（只改 svg 不够）")
 
     # 3) 「检查更新」按钮的旋转图标
     #    检查是一段持续状态，图标要一直转；用 animation 而不是 transition。
@@ -213,6 +226,70 @@ def check_indeterminate_and_verline():
     #    尺寸全靠 CSS；没有这条规则会塌成 0，按钮上只剩文字。
     if not re.search(r"\.btn\s+\.ic\s*\{[^}]*width:\s*16px", css):
         fails.append("缺少 .btn .ic 的显式尺寸（图标宽度会塌成 0）")
+
+
+    fails.extend(check_app_shell(css))
+
+    return fails
+
+
+def check_app_shell(css):
+    """应用壳式布局：文档高度必须固定为视口高度。
+
+    宿主按文档高度给应用框定尺寸，而外壳的 `min-height: 100vh` 又让文档随内容
+    长高 —— 两者互相喂，框越撑越高，钉在 100vh 底边的侧栏底部被推出屏幕，
+    概览页只剩上方一小块内容、下面一大片空白。
+
+    实测（403x1155 视口）修复前各页文档高度：统计 4313 / 网络诊断 1974 /
+    概览 1603 —— 分别 3.7 / 1.7 / 1.4 屏；修复后全部等于 1155。
+
+    四条规则缺一不可，任一条缺失都会让文档重新长高：
+      1. html, body 不能滚动（否则文档本身就能比视口高）
+      2. 外壳用 height 而不是 min-height —— min-height 正是那个放大器
+      3. 主栏的 min-height:0 —— flex 子项默认 min-height:auto 会拒绝缩小
+      4. 内容区承担滚动，同样要 min-height:0
+    """
+    fails = []
+
+    # 1) html, body 锁滚动
+    rules = re.findall(r"html,\s*body\s*\{([^}]*)\}", css)
+    if not rules:
+        fails.append("找不到 html, body 规则")
+    elif not any(re.search(r"overflow:\s*hidden", b) for b in rules):
+        fails.append("html, body 没有 overflow: hidden（文档自己就能比视口高）")
+
+    # 2) 外壳固定高度
+    shell = re.findall(r"(?<![-\w.])\.shell\s*\{([^}]*)\}", css)
+    if not shell:
+        fails.append("找不到 %s 规则" % '.shell')
+    else:
+        body = " ".join(shell)
+        if not re.search(r"(?<![-\w])height:\s*100vh", body):
+            fails.append("%s 没有固定 height: 100vh（壳会随内容长高）" % '.shell')
+        if re.search(r"min-height:\s*100vh", body):
+            fails.append("%s 用回了 min-height: 100vh —— 那正是把页面越撑越长的原因"
+                         % '.shell')
+        if not re.search(r"min-height:\s*0", body):
+            fails.append("%s 缺少 min-height: 0（会被内容顶高）" % '.shell')
+
+    # 3) 主栏 min-height:0
+    main = re.findall(r"(?<![-\w.])\.main\s*\{([^}]*)\}", css)
+    if not main:
+        fails.append("找不到 %s 规则" % '.main')
+    elif not any(re.search(r"min-height:\s*0", b) for b in main):
+        fails.append("%s 缺少 min-height: 0（flex 子项默认 auto，内容仍会撑高壳）"
+                     % '.main')
+
+    # 4) 内容区承担滚动
+    content = re.findall(r"(?<![-\w.])\.content\s*\{([^}]*)\}", css)
+    if not content:
+        fails.append("找不到 %s 规则" % '.content')
+    else:
+        if not any(re.search(r"overflow-y:\s*auto", b) for b in content):
+            fails.append("%s 没有 overflow-y: auto（长内容无处可滚，只能撑高文档）"
+                         % '.content')
+        if not any(re.search(r"min-height:\s*0", b) for b in content):
+            fails.append("%s 缺少 min-height: 0（长内容会顶高主栏）" % '.content')
 
     return fails
 

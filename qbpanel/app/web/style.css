@@ -85,10 +85,16 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* 页面是「应用壳」，不是文档。
+   下面几条规则共同保证：文档高度永远等于视口高度，滚动只发生在 .content 内部。
+   原因：宿主会按文档高度给应用框定尺寸，而 .shell 的 min-height:100vh 又让文档
+   随内容长高 —— 两者互相喂，框越撑越高，钉在 100vh 底边的侧栏底部就被推出屏幕，
+   同时留下一大片空白。锁住文档高度就切断了这个循环。 */
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
@@ -113,7 +119,9 @@ svg { display: block; }
 ::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: content-box; }
 
 /* ---------------- layout ---------------- */
-.shell { display: flex; min-height: 100vh; }
+/* height 固定为 100vh、min-height 归零：壳自己不参与内容高度增长，
+   内容再长也不撑高文档（见上面 html, body 的注释）。 */
+.shell { display: flex; height: 100vh; min-height: 0; overflow: hidden; }
 
 .side {
   width: 216px; flex: 0 0 216px;
@@ -201,7 +209,9 @@ svg { display: block; }
 }
 .ver-line .mono { font-family: var(--mono); }
 
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* min-height:0 必不可少：flex 子项的默认 min-height:auto 会让它拒绝缩小到
+   内容高度以下，于是 .content 的长内容仍然把整个壳撑高。 */
+.main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
 .topbar {
   display: flex; align-items: center; gap: 10px;
@@ -217,7 +227,13 @@ svg { display: block; }
      so the same node is shared between desktop and phone topbars */
 }
 
-.content { padding: 16px 18px 40px; flex: 1; min-width: 0; }
+/* 滚动改由内容区自己承担（壳不再滚动，见文件顶部 html,body 的注释）。
+   min-height:0 同上：否则内容长度会把 .main 顶高、进而撑高整个壳。
+   overscroll-behavior 防止内滚到头后继续带动外层。 */
+.content {
+  padding: 16px 18px 40px; flex: 1; min-width: 0; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+}
 
 /* ---------------- primitives ---------------- */
 .btn {
@@ -1171,18 +1187,23 @@ canvas { display: block; width: 100%; height: 100%; }
 
 
 /* 版本行：地球图标与版本文字的对齐。
-   flex 的 align-items:center 对齐的是「行盒」，而数字字形的墨迹偏上，
-   line-height 默认 1.55 又让行盒比字形高出小半行 —— 两者叠加，图标看着
-   比字低 2px 左右（实测 eMule 2.3px、PVEpanel 2.0px）。
-   收窄行高去掉半行距，再把图标上移 1px 补字形差异，实测降到 0.3 / 0.0 / -0.5px。 */
-.ver-line { line-height: 16px; }
-/* 版本行：地球图标与版本文字的对齐。
-   实测（10 倍放大、逐列找墨迹）：14px 图标时地球墨迹高 11.8px、文字 8.2px，
-   中线虽然重合，但地球上下各超出 1.75px，看起来像「地球沉下去」。
-   缩到 11px 后地球 9.2px 与文字基本同高，中线差在三款为 0.00、另一款 0.35，
-   上下超出对称在 0.5px 内，是这几轮实测里最平衡的一档。 */
-.ver-line svg { width: 11px; height: 11px; flex: 0 0 11px;
-                transform: translateY(-1.5px); }
+   早期做法是 flex 居中 + 固定像素的 translateY 补偿，而那个补偿值是按某一种
+   等宽字标定的。换一种字体，数字墨迹的高度就从 8.17px 变成 8.71px，固定的
+   像素偏移立刻失准（实测最差偏 1.12px，就是「地球浮在数字上面」）。
+   现在改为对齐基线，并且所有尺寸都用 em，跟着字号走、不吃字体度量：
+   · 圆点在 24 的 viewBox 里 r=9，墨迹占盒子的 12.5%…87.5% 且居中，
+     所以墨迹高 = 0.75 × 0.94em ≈ 0.70em，与数字墨迹基本同高；
+   · 墨迹底边在盒子底边之上 0.125 × 0.94em = 0.1175em，再下移 0.12em
+     就正好压在基线上，于是墨迹上下沿与数字重合，中线自然重合。
+   三种字体、四个产品实测偏差在 ±0.25px 内，且不随字体变化。 */
+.ver-line { line-height: 16px; align-items: baseline; }
+.ver-line .ic, .ver-line .ver-ic {
+  display: block; align-self: baseline;
+  width: .94em; height: .94em; flex: 0 0 .94em;
+  line-height: 0;
+}
+.ver-line svg { width: .94em; height: .94em; display: block;
+                transform: translateY(.12em); }
 
 
 /* 按钮里的图标容器：宽高交给 CSS，不依赖 svg 标签上的 width/height 属性。
